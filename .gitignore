@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.html
+cj.txt
+xhr.json
+.DS_Store
