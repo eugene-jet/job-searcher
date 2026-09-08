@@ -54,28 +54,35 @@ def _fmt_date(iso):
         return iso or "—"
 
 
-def vac_line(vac):
-    label = SOURCE_LABEL.get(vac["source"], vac["source"])
-    loc = vac.get("location") or "—"
-    raw = vac.get("date_posted") or ""
-    date_md = "_%s_" % (_fmt_date(raw) if raw else "—")
-    return "- **%s** — %s · %s · %s · [%s](%s)" % (
-        vac["title"],
-        vac["company"] or "—",
-        loc,
-        date_md,
-        label,
-        vac["url"],
-    )
+def vac_line(vac, with_source):
+    line = "- [%s](%s) — %s" % (vac["title"], vac["url"], vac["company"] or "—")
+    loc = vac.get("location")
+    if loc:
+        line += " · %s" % loc
+    if with_source:
+        line += " [%s]" % SOURCE_LABEL.get(vac["source"], vac["source"])
+    return line
 
 
-def _section(out, heading, items):
+def _section(out, heading, items, with_source):
     out.append("## %s (%d)" % (heading, len(items)))
     out.append("")
-    if items:
-        out.extend(vac_line(v) for v in items)
-    else:
+    if not items:
         out.append("_Немає за період._")
+        out.append("")
+        return
+    # Group by date (items arrive newest-first, title-sorted within a day) and
+    # print the date once as a sub-heading instead of on every line.
+    last = None
+    for v in items:
+        date = _fmt_date(v.get("date_posted") or "—")
+        if date != last:
+            if last is not None:
+                out.append("")  # close the previous date's list
+            out.append(date)
+            out.append("")  # blank line so the bullets render as a list
+            last = date
+        out.append(vac_line(v, with_source))
     out.append("")
 
 
@@ -97,9 +104,9 @@ def build_report(today, cutoff, igaming, djinni, dou, errors):
 
     # iGaming matches are pulled out of the per-source blocks and shown first.
     if igaming:
-        _section(out, "iGaming", igaming)
-    _section(out, "Вакансії Djinni", djinni)
-    _section(out, "Вакансії DOU", dou)
+        _section(out, "iGaming", igaming, with_source=True)
+    _section(out, "Вакансії Djinni", djinni, with_source=False)
+    _section(out, "Вакансії DOU", dou, with_source=False)
     return "\n".join(out)
 
 
@@ -118,19 +125,17 @@ def _esc(text):
 
 
 def _tg_vac_line(vac, with_source):
-    label = SOURCE_LABEL.get(vac["source"], vac["source"])
-    loc = _esc(vac.get("location") or "—")
-    raw = vac.get("date_posted") or ""
-    date_html = _fmt_date(raw) if raw else "—"
-    src = (" [%s]" % label) if with_source else ""
-    return '• <a href="%s">%s</a> — %s · %s · %s%s' % (
+    line = '• <a href="%s">%s</a> — %s' % (
         vac["url"],
         _esc(vac["title"]),
         _esc(vac["company"] or "—"),
-        loc,
-        date_html,
-        src,
     )
+    loc = vac.get("location")
+    if loc:
+        line += " · %s" % _esc(loc)
+    if with_source:
+        line += " [%s]" % SOURCE_LABEL.get(vac["source"], vac["source"])
+    return line
 
 
 def build_telegram_messages(today, cutoff, igaming, djinni, dou):
@@ -145,7 +150,13 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou):
             return
         lines.append("")
         lines.append("<b>%s (%d)</b>" % (heading, len(items)))
-        lines.extend(_tg_vac_line(v, with_source) for v in items)
+        last = None
+        for v in items:
+            date = _fmt_date(v.get("date_posted") or "—")
+            if date != last:
+                lines.append(date)
+                last = date
+            lines.append(_tg_vac_line(v, with_source))
 
     add_block("iGaming", igaming, True)
     add_block("Djinni", djinni, False)
