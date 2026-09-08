@@ -4,28 +4,27 @@ Daily report of Product Design and UI/UX vacancies from
 [DOU](https://jobs.dou.ua/vacancies/?category=Design) and
 [Djinni](https://djinni.co/jobs/?primary_keyword=Design).
 
-Each run scrapes both boards, compares the current listing against the
-previously stored state, and writes a dated Markdown report to `reports/`
-describing what is **new**, what is **still open**, and what has **disappeared**
-from the listing since the previous run.
+Each run scrapes both boards and writes a dated Markdown report to `reports/`
+listing the vacancies **published within the last two days** (by each board's
+own posting date), split into a **Djinni** section and a **DOU** section,
+newest first.
 
 ## How it works
 
 - `scrapers.py` — fetches and normalizes vacancies from both boards using only
   the Python standard library (no third-party dependencies, so it runs in a
   clean environment without `pip install`). DOU is paginated through its
-  `xhr-load` endpoint; Djinni is read from the `JobPosting` JSON-LD on each
-  results page. Only titles matching the Product Design / UI/UX filter are kept.
-- `daily_report.py` — loads `state.json`, runs the scrapers, computes the diff,
-  writes `reports/report-YYYY-MM-DD.md`, and rewrites `state.json` with the
-  current active listing (preserving each vacancy's `first_seen` date).
-- `state.json` — the persistent memory of previously seen vacancies. It is
-  committed to the repository so that "new vs old" stays meaningful across runs
-  in a fresh cloud environment.
+  `xhr-load` endpoint and its list date (a Ukrainian "day month" string) is
+  parsed; Djinni is read from the `JobPosting` JSON-LD on each results page,
+  including its `datePosted`. Only titles matching the Product Design / UI/UX
+  filter are kept.
+- `daily_report.py` — runs the scrapers, keeps the vacancies whose posting date
+  falls within the window (`WINDOW_DAYS`, default 2 = today + yesterday), groups
+  them by source, sorts newest first, and writes
+  `reports/report-YYYY-MM-DD.md`.
 
-If a source fails to load on a given run, its previously seen vacancies are kept
-untouched rather than being reported as closed, so a transient network error
-does not produce a misleading report.
+If a source fails to load, the report notes the error; if both fail the script
+exits non-zero so no empty report is committed.
 
 ## Run it locally
 
@@ -38,8 +37,9 @@ The report is printed to `reports/` and a one-line summary to stdout.
 ## Automation
 
 A GitHub Actions workflow ([.github/workflows/daily.yml](.github/workflows/daily.yml))
-runs `daily_report.py` once a day at 09:00 Europe/Kyiv (cron `0 6 * * *` UTC),
-then commits and pushes the new report and updated `state.json` back to this
+runs `daily_report.py` once a day at 10:00 Europe/Kyiv (cron `0 7 * * *` UTC;
+the schedule is fixed to UTC, so the local time shifts by an hour across
+daylight-saving changes), then commits and pushes the new report back to this
 repository. GitHub-hosted runners have full outbound network access; the
 scraping runs there because the Claude Code cloud sandbox blocks outbound
 connections to the job boards by organization egress policy.

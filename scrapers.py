@@ -2,9 +2,12 @@
 
 Standard library only (urllib) so the script runs in a fresh cloud environment
 without installing any dependencies. Each scraper returns a list of normalized
-vacancy dicts with the keys: source, id, title, company, url, location.
+vacancy dicts with the keys: source, id, title, company, url, location,
+date_posted (an ISO ``YYYY-MM-DD`` string, or ``None`` when the board does not
+expose a parseable date).
 """
 
+import datetime
 import http.cookiejar
 import json
 import re
@@ -52,29 +55,74 @@ def _clean(text):
 
 # --- DOU -------------------------------------------------------------------
 
-# One <li class="l-vacancy"> block: the title anchor, the company anchor and
-# the optional cities span. The markup puts class before href and wraps
-# attributes across lines, so DOTALL matching is required.
-_DOU_ITEM = re.compile(
-    r'<a class="vt" href="(?P<url>https://jobs\.dou\.ua/[^"?]+/vacancies/(?P<id>\d+)/[^"]*)"\s*>'
-    r"(?P<title>.*?)</a>"
-    r'.*?<a\s+class="company"[^>]*>(?P<company>.*?)</a>'
-    r'(?:.*?<span class="cities[^"]*">(?P<city>[^<]*)</span>)?',
+# DOU shows the date as a Ukrainian day + genitive month, e.g. "4 вересня",
+# with no year. Map the month names so the list dates can be parsed.
+_UA_MONTHS = {
+    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4,
+    "травня": 5, "червня": 6, "липня": 7, "серпня": 8,
+    "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
+}
+
+
+def _parse_dou_date(text, today):
+    """Turn "4 вересня" into an ISO date string, or return None.
+
+    DOU omits the year, so assume the current year and roll back to the
+    previous one when the month lies in the future (a December listing seen
+    in January).
+    """
+    parts = (text or "").strip().split()
+    if len(parts) < 2:
+        return None
+    try:
+        day = int(parts[0])
+    except ValueError:
+        return None
+    month = _UA_MONTHS.get(parts[1].lower())
+    if not month:
+        return None
+    year = today.year
+    if month > today.month + 1:
+        year -= 1
+    try:
+        return datetime.date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+# Each <li class="l-vacancy"> block holds the date div, the title anchor, the
+# company anchor and an optional cities span. Attributes wrap across lines, so
+# every sub-pattern matches with DOTALL.
+_DOU_LI = re.compile(r'<li class="l-vacancy.*?</li>', re.S)
+_DOU_DATE = re.compile(r'<div class="date">\s*([^<]+?)\s*</div>')
+_DOU_VT = re.compile(
+    r'<a class="vt" href="(https://jobs\.dou\.ua/[^"?]+/vacancies/(\d+)/[^"]*)"\s*>(.*?)</a>',
     re.S,
 )
+_DOU_COMPANY = re.compile(r'<a\s+class="company"[^>]*>(.*?)</a>', re.S)
+_DOU_CITY = re.compile(r'<span class="cities[^"]*">([^<]*)</span>')
 
 
-def _parse_dou_html(html):
+def _parse_dou_html(html, today=None):
+    today = today or datetime.date.today()
     items = []
-    for m in _DOU_ITEM.finditer(html):
+    for block in _DOU_LI.finditer(html):
+        chunk = block.group(0)
+        vt = _DOU_VT.search(chunk)
+        if not vt:
+            continue
+        date_div = _DOU_DATE.search(chunk)
+        company = _DOU_COMPANY.search(chunk)
+        city = _DOU_CITY.search(chunk)
         items.append(
             {
                 "source": "dou",
-                "id": m.group("id"),
-                "title": _clean(m.group("title")),
-                "company": _clean(m.group("company")),
-                "url": m.group("url").split("?")[0],
-                "location": _clean(m.group("city") or ""),
+                "id": vt.group(2),
+                "title": _clean(vt.group(3)),
+                "company": _clean(company.group(1)) if company else "",
+                "url": vt.group(1).split("?")[0],
+                "location": _clean(city.group(1)) if city else "",
+                "date_posted": _parse_dou_date(date_div.group(1) if date_div else "", today),
             }
         )
     return items
@@ -152,6 +200,11 @@ def _parse_djinni_ld(html):
             if isinstance(req, dict):
                 addr = req.get("address") or {}
                 loc = addr.get("addressCountry", "") if isinstance(addr, dict) else ""
+            # datePosted is an ISO datetime like "2026-09-08T11:33:14.49"; keep
+            # the date part when it is well formed.
+            posted = (j.get("datePosted") or "")[:10]
+            if not re.match(r"\d{4}-\d{2}-\d{2}$", posted):
+                posted = None
             items.append(
                 {
                     "source": "djinni",
@@ -160,6 +213,7 @@ def _parse_djinni_ld(html):
                     "company": _clean(org.get("name", "") if isinstance(org, dict) else ""),
                     "url": url,
                     "location": "Remote" if j.get("jobLocationType") == "TELECOMMUTE" else loc,
+                    "date_posted": posted,
                 }
             )
     return items
