@@ -104,9 +104,9 @@ def build_report(today, cutoff, igaming, djinni, dou, errors):
 
     # iGaming matches are pulled out of the per-source blocks and shown first.
     if igaming:
-        _section(out, "✱ iGaming", igaming, with_source=True)
-    _section(out, "✱ Вакансії Djinni", djinni, with_source=False)
-    _section(out, "✱ Вакансії DOU", dou, with_source=False)
+        _section(out, "🟣 iGaming", igaming, with_source=True)
+    _section(out, "🟠 Вакансії Djinni", djinni, with_source=False)
+    _section(out, "🟢 Вакансії DOU", dou, with_source=False)
     return "\n".join(out)
 
 
@@ -141,8 +141,8 @@ def _tg_vac_line(vac, with_source):
 def build_telegram_messages(today, cutoff, igaming, djinni, dou):
     """Render the report as one or more HTML messages under Telegram's limit."""
     lines = [
-        "<b>Design вакансії (%s)🔥</b>" % _fmt_date(today),
-        "Огляд за останні %d дні (%s/%s)" % (WINDOW_DAYS, _fmt_date(cutoff), _fmt_date(today)),
+        "<b>Design вакансії 🧑‍💻✨</b>",
+        "За останні %d дні (%s/%s)" % (WINDOW_DAYS, _fmt_date(cutoff)[:2], _fmt_date(today)),
     ]
 
     def add_block(heading, items, with_source):
@@ -158,9 +158,9 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou):
                 last = date
             lines.append(_tg_vac_line(v, with_source))
 
-    add_block("✱ iGaming", igaming, True)
-    add_block("✱ Djinni", djinni, False)
-    add_block("✱ DOU", dou, False)
+    add_block("🟣 iGaming", igaming, True)
+    add_block("🟠 Djinni", djinni, False)
+    add_block("🟢 DOU", dou, False)
 
     if not igaming and not djinni and not dou:
         lines.append("")
