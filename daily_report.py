@@ -104,9 +104,9 @@ def build_report(today, cutoff, igaming, djinni, dou, errors):
 
     # iGaming matches are pulled out of the per-source blocks and shown first.
     if igaming:
-        _section(out, "iGaming", igaming, with_source=True)
-    _section(out, "Вакансії Djinni", djinni, with_source=False)
-    _section(out, "Вакансії DOU", dou, with_source=False)
+        _section(out, "✱ iGaming", igaming, with_source=True)
+    _section(out, "✱ Вакансії Djinni", djinni, with_source=False)
+    _section(out, "✱ Вакансії DOU", dou, with_source=False)
     return "\n".join(out)
 
 
@@ -158,9 +158,9 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou):
                 last = date
             lines.append(_tg_vac_line(v, with_source))
 
-    add_block("iGaming", igaming, True)
-    add_block("Djinni", djinni, False)
-    add_block("DOU", dou, False)
+    add_block("✱ iGaming", igaming, True)
+    add_block("✱ Djinni", djinni, False)
+    add_block("✱ DOU", dou, False)
 
     if not igaming and not djinni and not dou:
         lines.append("")
