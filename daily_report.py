@@ -141,8 +141,8 @@ def _tg_vac_line(vac, with_source):
 def build_telegram_messages(today, cutoff, igaming, djinni, dou):
     """Render the report as one or more HTML messages under Telegram's limit."""
     lines = [
-        "<b>Design вакансії — %s</b>" % _fmt_date(today),
-        "За останні %d дні (%s – %s)" % (WINDOW_DAYS, _fmt_date(cutoff), _fmt_date(today)),
+        "<b>Design вакансії (%s)🔥</b>" % _fmt_date(today),
+        "Огляд за останні %d дні (%s/%s)" % (WINDOW_DAYS, _fmt_date(cutoff), _fmt_date(today)),
     ]
 
     def add_block(heading, items, with_source):
