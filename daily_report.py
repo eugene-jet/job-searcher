@@ -14,6 +14,8 @@ import json
 import os
 import re
 import sys
+import urllib.parse
+import urllib.request
 
 import scrapers
 
@@ -92,6 +94,93 @@ def build_report(today, cutoff, igaming, djinni, dou, errors):
     return "\n".join(out)
 
 
+# --- Telegram delivery -----------------------------------------------------
+
+TELEGRAM_LIMIT = 3800  # Telegram's hard limit is 4096; leave room for tags.
+
+
+def _esc(text):
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _tg_vac_line(vac, with_source):
+    label = SOURCE_LABEL.get(vac["source"], vac["source"])
+    loc = _esc(vac.get("location") or "—")
+    date = vac.get("date_posted") or "—"
+    src = (" [%s]" % label) if with_source else ""
+    return '• <a href="%s">%s</a> — %s · %s · %s%s' % (
+        vac["url"],
+        _esc(vac["title"]),
+        _esc(vac["company"] or "—"),
+        loc,
+        date,
+        src,
+    )
+
+
+def build_telegram_messages(today, cutoff, igaming, djinni, dou):
+    """Render the report as one or more HTML messages under Telegram's limit."""
+    lines = [
+        "<b>Design вакансії — %s</b>" % today,
+        "За останні %d дні (%s – %s)" % (WINDOW_DAYS, cutoff, today),
+    ]
+
+    def add_block(heading, items, with_source):
+        if not items:
+            return
+        lines.append("")
+        lines.append("<b>%s (%d)</b>" % (heading, len(items)))
+        lines.extend(_tg_vac_line(v, with_source) for v in items)
+
+    add_block("iGaming", igaming, True)
+    add_block("Djinni", djinni, False)
+    add_block("DOU", dou, False)
+
+    if not igaming and not djinni and not dou:
+        lines.append("")
+        lines.append("Немає вакансій за період.")
+
+    # Pack lines into chunks that each stay under the limit.
+    messages, chunk = [], ""
+    for line in lines:
+        piece = (line + "\n")
+        if len(chunk) + len(piece) > TELEGRAM_LIMIT and chunk:
+            messages.append(chunk.rstrip("\n"))
+            chunk = ""
+        chunk += piece
+    if chunk.strip():
+        messages.append(chunk.rstrip("\n"))
+    return messages
+
+
+def send_telegram(token, chat_id, messages):
+    """Send each message via the Telegram Bot API. Best-effort; logs failures."""
+    for msg in messages:
+        data = urllib.parse.urlencode(
+            {
+                "chat_id": chat_id,
+                "text": msg,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": "true",
+            }
+        ).encode()
+        url = "https://api.telegram.org/bot%s/sendMessage" % token
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(url, data=data), timeout=30
+            ) as resp:
+                resp.read()
+        except Exception as exc:  # noqa: BLE001 - notification must not break the run
+            sys.stderr.write("Telegram send failed: %s\n" % exc)
+            return False
+    return True
+
+
 def main():
     today_d = datetime.date.today()
     today = today_d.isoformat()
@@ -142,6 +231,15 @@ def main():
         "Window %s..%s | iGaming %d | Djinni %d | DOU %d | errors: %s"
         % (cutoff, today, len(igaming), len(djinni), len(dou), errors or "none")
     )
+
+    # Deliver to Telegram as inline messages when configured (skipped locally).
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if token and chat_id:
+        messages = build_telegram_messages(today, cutoff, igaming, djinni, dou)
+        ok = send_telegram(token, chat_id, messages)
+        print("Telegram: sent %d message(s), ok=%s" % (len(messages), ok))
+
     return 0
 
 
