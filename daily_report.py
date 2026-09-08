@@ -69,19 +69,14 @@ def _section(out, heading, items):
 
 
 def build_report(today, cutoff, igaming, djinni, dou, errors):
-    total = len(igaming) + len(djinni) + len(dou)
     out = []
     out.append("# Design вакансії — %s" % today)
     out.append("")
-    out.append(
-        "Джерела: DOU (category=Design) + Djinni (primary_keyword=Design). "
-        "Фільтр: Product Design, UI/UX."
-    )
+    out.append("Джерела: DOU + Djinni. Фільтр: Product Design, UI/UX.")
     out.append("")
     out.append(
-        "Опубліковані за останні %d дні (з %s по %s). "
-        "Всього: %d (iGaming %d, Djinni %d, DOU %d)."
-        % (WINDOW_DAYS, cutoff, today, total, len(igaming), len(djinni), len(dou))
+        "Опубліковані за останні %d дні (з %s по %s)."
+        % (WINDOW_DAYS, cutoff, today)
     )
     out.append("")
 
@@ -91,7 +86,7 @@ def build_report(today, cutoff, igaming, djinni, dou, errors):
 
     # iGaming matches are pulled out of the per-source blocks and shown first.
     if igaming:
-        _section(out, "🎰 iGaming", igaming)
+        _section(out, "iGaming", igaming)
     _section(out, "Вакансії Djinni", djinni)
     _section(out, "Вакансії DOU", dou)
     return "\n".join(out)
