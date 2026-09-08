@@ -79,7 +79,7 @@ def _section(out, heading, items, with_source):
         if date != last:
             if last is not None:
                 out.append("")  # close the previous date's list
-            out.append(date)
+            out.append("⦿ **%s**" % date)
             out.append("")  # blank line so the bullets render as a list
             last = date
         out.append(vac_line(v, with_source))
@@ -154,7 +154,7 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou):
         for v in items:
             date = _fmt_date(v.get("date_posted") or "—")
             if date != last:
-                lines.append(date)
+                lines.append("⦿ <b>%s</b>" % date)
                 last = date
             lines.append(_tg_vac_line(v, with_source))
 
