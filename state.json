@@ -1,4 +1,355 @@
 {
-  "updated": null,
-  "vacancies": {}
+  "updated": "2026-09-08",
+  "vacancies": {
+    "djinni#460898": {
+      "company": "Invictus",
+      "first_seen": "2026-09-08",
+      "id": "460898",
+      "last_seen": "2026-09-08",
+      "location": "",
+      "source": "djinni",
+      "title": "Graphic Designer/UX Designer",
+      "url": "https://djinni.co/jobs/460898-graphic-designer-ux-designer/"
+    },
+    "djinni#480429": {
+      "company": "D4 Group",
+      "first_seen": "2026-09-08",
+      "id": "480429",
+      "last_seen": "2026-09-08",
+      "location": "Remote",
+      "source": "djinni",
+      "title": "UX/UI Designer",
+      "url": "https://djinni.co/jobs/480429-ux-ui-designer/"
+    },
+    "djinni#810616": {
+      "company": "Aristeem",
+      "first_seen": "2026-09-08",
+      "id": "810616",
+      "last_seen": "2026-09-08",
+      "location": "Remote",
+      "source": "djinni",
+      "title": "Senior Product Designer",
+      "url": "https://djinni.co/jobs/810616-senior-product-designer/"
+    },
+    "djinni#836869": {
+      "company": "Invictus",
+      "first_seen": "2026-09-08",
+      "id": "836869",
+      "last_seen": "2026-09-08",
+      "location": "",
+      "source": "djinni",
+      "title": "Senior Graphic Designer/UX Designer",
+      "url": "https://djinni.co/jobs/836869-senior-graphic-designer-ux-designer/"
+    },
+    "djinni#838527": {
+      "company": "Konexta.Agency",
+      "first_seen": "2026-09-08",
+      "id": "838527",
+      "last_seen": "2026-09-08",
+      "location": "Remote",
+      "source": "djinni",
+      "title": "UI/UX Designer",
+      "url": "https://djinni.co/jobs/838527-ui-ux-designer/"
+    },
+    "djinni#846447": {
+      "company": "SIMPLE-KIT LLC",
+      "first_seen": "2026-09-08",
+      "id": "846447",
+      "last_seen": "2026-09-08",
+      "location": "",
+      "source": "djinni",
+      "title": "UI/UX Designer",
+      "url": "https://djinni.co/jobs/846447-ui-ux-designer/"
+    },
+    "djinni#846933": {
+      "company": "Wittix",
+      "first_seen": "2026-09-08",
+      "id": "846933",
+      "last_seen": "2026-09-08",
+      "location": "Remote",
+      "source": "djinni",
+      "title": "Senior Product Designer",
+      "url": "https://djinni.co/jobs/846933-senior-product-designer/"
+    },
+    "djinni#97378": {
+      "company": "IT INNOVATIONS",
+      "first_seen": "2026-09-08",
+      "id": "97378",
+      "last_seen": "2026-09-08",
+      "location": "UA",
+      "source": "djinni",
+      "title": "UI/UX-дизайнер",
+      "url": "https://djinni.co/jobs/97378-ui-ux-dizainer/"
+    },
+    "dou#151369": {
+      "company": "Metacarbon",
+      "first_seen": "2026-09-08",
+      "id": "151369",
+      "last_seen": "2026-09-08",
+      "location": "Львів, віддалено",
+      "source": "dou",
+      "title": "Product Designer (UI/UX)",
+      "url": "https://jobs.dou.ua/companies/saga-design-team/vacancies/151369/"
+    },
+    "dou#356201": {
+      "company": "Азов, 12-та бригада спеціального призначення НГУ",
+      "first_seen": "2026-09-08",
+      "id": "356201",
+      "last_seen": "2026-09-08",
+      "location": "Київ",
+      "source": "dou",
+      "title": "UI/UX Designer",
+      "url": "https://jobs.dou.ua/companies/azov-brigada-spetspriznachennya/vacancies/356201/"
+    },
+    "dou#356717": {
+      "company": "BetterMe",
+      "first_seen": "2026-09-08",
+      "id": "356717",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "Product Designer",
+      "url": "https://jobs.dou.ua/companies/betterme/vacancies/356717/"
+    },
+    "dou#360660": {
+      "company": "Windmill Digital",
+      "first_seen": "2026-09-08",
+      "id": "360660",
+      "last_seen": "2026-09-08",
+      "location": "Ukraine, віддалено",
+      "source": "dou",
+      "title": "Senior Product Designer",
+      "url": "https://jobs.dou.ua/companies/windmill-smart-solutions/vacancies/360660/"
+    },
+    "dou#361941": {
+      "company": "Ekreative",
+      "first_seen": "2026-09-08",
+      "id": "361941",
+      "last_seen": "2026-09-08",
+      "location": "Ukraine, Черкаси, віддалено",
+      "source": "dou",
+      "title": "Senior Product Designer",
+      "url": "https://jobs.dou.ua/companies/ekreative/vacancies/361941/"
+    },
+    "dou#362994": {
+      "company": "Keiki",
+      "first_seen": "2026-09-08",
+      "id": "362994",
+      "last_seen": "2026-09-08",
+      "location": "Київ, Львів",
+      "source": "dou",
+      "title": "Product Designer",
+      "url": "https://jobs.dou.ua/companies/keiki/vacancies/362994/"
+    },
+    "dou#367320": {
+      "company": "Cieden",
+      "first_seen": "2026-09-08",
+      "id": "367320",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "UX Designer (AI-Native/ Design Engineer)",
+      "url": "https://jobs.dou.ua/companies/cieden/vacancies/367320/"
+    },
+    "dou#367488": {
+      "company": "Pingle Studio",
+      "first_seen": "2026-09-08",
+      "id": "367488",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "Technical UI/UX Designer UE",
+      "url": "https://jobs.dou.ua/companies/pingle-studio/vacancies/367488/"
+    },
+    "dou#368430": {
+      "company": "Petcube",
+      "first_seen": "2026-09-08",
+      "id": "368430",
+      "last_seen": "2026-09-08",
+      "location": "Ukraine, USA and worldwide",
+      "source": "dou",
+      "title": "Digital Product Designer",
+      "url": "https://jobs.dou.ua/companies/petcube-inc/vacancies/368430/"
+    },
+    "dou#368764": {
+      "company": "Galaktica",
+      "first_seen": "2026-09-08",
+      "id": "368764",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "Product Designer",
+      "url": "https://jobs.dou.ua/companies/galaktica/vacancies/368764/"
+    },
+    "dou#371642": {
+      "company": "Phenomenon Studio",
+      "first_seen": "2026-09-08",
+      "id": "371642",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "Senior Product Designer",
+      "url": "https://jobs.dou.ua/companies/phenomenon-studio/vacancies/371642/"
+    },
+    "dou#371653": {
+      "company": "EVOPLAY",
+      "first_seen": "2026-09-08",
+      "id": "371653",
+      "last_seen": "2026-09-08",
+      "location": "Київ, віддалено",
+      "source": "dou",
+      "title": "UI/UX designer",
+      "url": "https://jobs.dou.ua/companies/evoplay/vacancies/371653/"
+    },
+    "dou#371676": {
+      "company": "Versus Trade",
+      "first_seen": "2026-09-08",
+      "id": "371676",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "Middle UI/UX Designer",
+      "url": "https://jobs.dou.ua/companies/versus-trade/vacancies/371676/"
+    },
+    "dou#371715": {
+      "company": "Playtech",
+      "first_seen": "2026-09-08",
+      "id": "371715",
+      "last_seen": "2026-09-08",
+      "location": "Київ, віддалено",
+      "source": "dou",
+      "title": "UI/UX Designer",
+      "url": "https://jobs.dou.ua/companies/playtech/vacancies/371715/"
+    },
+    "dou#371840": {
+      "company": "Halo Lab",
+      "first_seen": "2026-09-08",
+      "id": "371840",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "Strong Product Designer",
+      "url": "https://jobs.dou.ua/companies/halo-lab/vacancies/371840/"
+    },
+    "dou#371855": {
+      "company": "gFit",
+      "first_seen": "2026-09-08",
+      "id": "371855",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "Product Designer — Fitness & Longevity App",
+      "url": "https://jobs.dou.ua/companies/gf1t/vacancies/371855/"
+    },
+    "dou#371856": {
+      "company": "Sombra",
+      "first_seen": "2026-09-08",
+      "id": "371856",
+      "last_seen": "2026-09-08",
+      "location": "Київ, Львів, Івано-Франківськ, віддалено",
+      "source": "dou",
+      "title": "Senior Product Designer",
+      "url": "https://jobs.dou.ua/companies/sombra/vacancies/371856/"
+    },
+    "dou#371872": {
+      "company": "Pingle Studio",
+      "first_seen": "2026-09-08",
+      "id": "371872",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "UX/UI Designer",
+      "url": "https://jobs.dou.ua/companies/pingle-studio/vacancies/371872/"
+    },
+    "dou#371883": {
+      "company": "Swarmer",
+      "first_seen": "2026-09-08",
+      "id": "371883",
+      "last_seen": "2026-09-08",
+      "location": "Київ, Львів",
+      "source": "dou",
+      "title": "AI-Native Product Design Lead (UX/UI)",
+      "url": "https://jobs.dou.ua/companies/swarmer/vacancies/371883/"
+    },
+    "dou#371913": {
+      "company": "bodo",
+      "first_seen": "2026-09-08",
+      "id": "371913",
+      "last_seen": "2026-09-08",
+      "location": "Київ",
+      "source": "dou",
+      "title": "Product Designer",
+      "url": "https://jobs.dou.ua/companies/bodo/vacancies/371913/"
+    },
+    "dou#371978": {
+      "company": "Virtido",
+      "first_seen": "2026-09-08",
+      "id": "371978",
+      "last_seen": "2026-09-08",
+      "location": "Львів, віддалено",
+      "source": "dou",
+      "title": "Product Designer UI/UX (DevTech Experience)",
+      "url": "https://jobs.dou.ua/companies/virtido/vacancies/371978/"
+    },
+    "dou#371993": {
+      "company": "Growity Tech",
+      "first_seen": "2026-09-08",
+      "id": "371993",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "Product Designer",
+      "url": "https://jobs.dou.ua/companies/growity-tech/vacancies/371993/"
+    },
+    "dou#372058": {
+      "company": "brightfin",
+      "first_seen": "2026-09-08",
+      "id": "372058",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "Senior UI/UX Designer (Ukraine Private Entrepreneur only)",
+      "url": "https://jobs.dou.ua/companies/brightfin/vacancies/372058/"
+    },
+    "dou#372179": {
+      "company": "InventorSoft",
+      "first_seen": "2026-09-08",
+      "id": "372179",
+      "last_seen": "2026-09-08",
+      "location": "Чернівці, віддалено",
+      "source": "dou",
+      "title": "Senior UX/UI Designer (iGaming)",
+      "url": "https://jobs.dou.ua/companies/inventorsoft/vacancies/372179/"
+    },
+    "dou#372225": {
+      "company": "Unbreakable Ukraine Foundation",
+      "first_seen": "2026-09-08",
+      "id": "372225",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "UI/UX Designer (Web / App)",
+      "url": "https://jobs.dou.ua/companies/unbreakable-ukraine-foundation/vacancies/372225/"
+    },
+    "dou#372467": {
+      "company": "TEAM International",
+      "first_seen": "2026-09-08",
+      "id": "372467",
+      "last_seen": "2026-09-08",
+      "location": "Львів, Лісабон (Португалія), Люблін (Польща), віддалено",
+      "source": "dou",
+      "title": "Lead Product UI/UX Designer",
+      "url": "https://jobs.dou.ua/companies/team-international/vacancies/372467/"
+    },
+    "dou#372492": {
+      "company": "Anadea",
+      "first_seen": "2026-09-08",
+      "id": "372492",
+      "last_seen": "2026-09-08",
+      "location": "віддалено",
+      "source": "dou",
+      "title": "Senior Product Designer",
+      "url": "https://jobs.dou.ua/companies/anadea/vacancies/372492/"
+    }
+  }
 }
