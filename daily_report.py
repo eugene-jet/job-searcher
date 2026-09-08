@@ -46,12 +46,21 @@ def is_igaming(vac):
     return bool(_IGAMING.search(text))
 
 
+def _fmt_date(iso):
+    """Format an ISO date as dd/mm/yy for display; pass through anything else."""
+    try:
+        return datetime.datetime.strptime(iso, "%Y-%m-%d").strftime("%d/%m/%y")
+    except (ValueError, TypeError):
+        return iso or "—"
+
+
 def vac_line(vac, today):
     label = SOURCE_LABEL.get(vac["source"], vac["source"])
     loc = vac.get("location") or "—"
-    date = vac.get("date_posted") or "—"
+    raw = vac.get("date_posted") or ""
+    disp = _fmt_date(raw) if raw else "—"
     # Highlight today's postings with a bold date; older ones stay italic.
-    date_md = "**%s**" % date if date == today else "_%s_" % date
+    date_md = "**%s**" % disp if raw == today else "_%s_" % disp
     return "- **%s** — %s · %s · %s · [%s](%s)" % (
         vac["title"],
         vac["company"] or "—",
@@ -74,13 +83,13 @@ def _section(out, heading, items, today):
 
 def build_report(today, cutoff, igaming, djinni, dou, errors):
     out = []
-    out.append("# Design вакансії — %s" % today)
+    out.append("# Design вакансії — %s" % _fmt_date(today))
     out.append("")
     out.append("Джерела: DOU + Djinni. Фільтр: Product Design, UI/UX.")
     out.append("")
     out.append(
         "Опубліковані за останні %d дні (з %s по %s)."
-        % (WINDOW_DAYS, cutoff, today)
+        % (WINDOW_DAYS, _fmt_date(cutoff), _fmt_date(today))
     )
     out.append("")
 
@@ -113,9 +122,10 @@ def _esc(text):
 def _tg_vac_line(vac, with_source, today):
     label = SOURCE_LABEL.get(vac["source"], vac["source"])
     loc = _esc(vac.get("location") or "—")
-    date = vac.get("date_posted") or "—"
+    raw = vac.get("date_posted") or ""
+    disp = _fmt_date(raw) if raw else "—"
     # Bold today's date so fresh postings stand out.
-    date_html = "<b>%s</b>" % date if date == today else date
+    date_html = "<b>%s</b>" % disp if raw == today else disp
     src = (" [%s]" % label) if with_source else ""
     return '• <a href="%s">%s</a> — %s · %s · %s%s' % (
         vac["url"],
@@ -130,8 +140,8 @@ def _tg_vac_line(vac, with_source, today):
 def build_telegram_messages(today, cutoff, igaming, djinni, dou):
     """Render the report as one or more HTML messages under Telegram's limit."""
     lines = [
-        "<b>Design вакансії — %s</b>" % today,
-        "За останні %d дні (%s – %s)" % (WINDOW_DAYS, cutoff, today),
+        "<b>Design вакансії — %s</b>" % _fmt_date(today),
+        "За останні %d дні (%s – %s)" % (WINDOW_DAYS, _fmt_date(cutoff), _fmt_date(today)),
     ]
 
     def add_block(heading, items, with_source):
