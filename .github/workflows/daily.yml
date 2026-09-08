@@ -1,9 +1,9 @@
 name: Daily design vacancy report
 
-# Runs the DOU + Djinni scraper twice a day, then opens a pull request with the
-# generated report and merges it automatically. GitHub-hosted runners have the
-# outbound network access the Claude Code cloud sandbox denies by egress policy,
-# so the scraping runs here.
+# Runs the DOU + Djinni scraper twice a day, sends the report to Telegram, then
+# opens a pull request with the report and merges it automatically. GitHub-hosted
+# runners have the outbound network access the Claude Code cloud sandbox denies
+# by egress policy, so the scraping runs here.
 
 on:
   schedule:
@@ -35,6 +35,23 @@ jobs:
       - name: Generate report
         run: python3 daily_report.py
 
+      - name: Send report to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          DATE="$(date -u +%Y-%m-%d)"
+          REPORT="reports/report-${DATE}.md"
+          if [ ! -f "$REPORT" ]; then
+            echo "No report file to send."
+            exit 0
+          fi
+          curl -sS -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+            -F chat_id="${TELEGRAM_CHAT_ID}" \
+            -F document=@"${REPORT}" \
+            -F caption="Design вакансії — ${DATE} (за останні 3 дні)"
+
       - name: Open and merge report PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -53,8 +70,6 @@ jobs:
           gh pr create --base main --head "$BRANCH" \
             --title "Daily report $(date -u +'%Y-%m-%d %H:%M UTC')" \
             --body "Automated Product Design / UI/UX vacancy report from DOU and Djinni."
-          # Merge automatically. Retry a few times in case the PR is not yet
-          # reported as mergeable immediately after creation.
           for i in 1 2 3 4 5; do
             if gh pr merge "$BRANCH" --squash --delete-branch; then
               exit 0
