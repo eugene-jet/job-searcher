@@ -1,9 +1,9 @@
 name: Daily design vacancy report
 
-# Runs the DOU + Djinni scraper twice a day, sends the report to Telegram, then
-# opens a pull request with the report and merges it automatically. GitHub-hosted
-# runners have the outbound network access the Claude Code cloud sandbox denies
-# by egress policy, so the scraping runs here.
+# Runs the DOU + Djinni scraper twice a day, sends the report to Telegram as
+# inline message(s), then opens a pull request with the report and merges it
+# automatically. GitHub-hosted runners have the outbound network access the
+# Claude Code cloud sandbox denies by egress policy, so the scraping runs here.
 
 on:
   schedule:
@@ -32,25 +32,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Generate report
-        run: python3 daily_report.py
-
-      - name: Send report to Telegram
+      - name: Generate report and send to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          DATE="$(date -u +%Y-%m-%d)"
-          REPORT="reports/report-${DATE}.md"
-          if [ ! -f "$REPORT" ]; then
-            echo "No report file to send."
-            exit 0
-          fi
-          curl -sS -X POST \
-            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
-            -F chat_id="${TELEGRAM_CHAT_ID}" \
-            -F document=@"${REPORT}" \
-            -F caption="Design вакансії — ${DATE} (за останні 3 дні)"
+        run: python3 daily_report.py
 
       - name: Open and merge report PR
         env:
