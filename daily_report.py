@@ -12,6 +12,7 @@ section, newest first. Run with no arguments:
 import datetime
 import json
 import os
+import re
 import sys
 
 import scrapers
@@ -24,6 +25,18 @@ REPORTS_DIR = os.path.join(ROOT, "reports")
 WINDOW_DAYS = 3
 
 SOURCE_LABEL = {"dou": "DOU", "djinni": "Djinni"}
+
+# Vacancies that mention iGaming get pulled into their own block at the top.
+# Only the scraped fields (title, company, location) are searched — job
+# descriptions are not fetched.
+_IGAMING = re.compile(r"i[\s-]?gaming", re.IGNORECASE)
+
+
+def is_igaming(vac):
+    text = " ".join(
+        (vac.get("title", ""), vac.get("company", ""), vac.get("location", ""))
+    )
+    return bool(_IGAMING.search(text))
 
 
 def vac_line(vac):
@@ -50,8 +63,8 @@ def _section(out, heading, items):
     out.append("")
 
 
-def build_report(today, cutoff, djinni, dou, errors):
-    total = len(djinni) + len(dou)
+def build_report(today, cutoff, igaming, djinni, dou, errors):
+    total = len(igaming) + len(djinni) + len(dou)
     out = []
     out.append("# Design вакансії — %s" % today)
     out.append("")
@@ -62,8 +75,8 @@ def build_report(today, cutoff, djinni, dou, errors):
     out.append("")
     out.append(
         "Опубліковані за останні %d дні (з %s по %s). "
-        "Всього: %d (Djinni %d, DOU %d)."
-        % (WINDOW_DAYS, cutoff, today, total, len(djinni), len(dou))
+        "Всього: %d (iGaming %d, Djinni %d, DOU %d)."
+        % (WINDOW_DAYS, cutoff, today, total, len(igaming), len(djinni), len(dou))
     )
     out.append("")
 
@@ -71,6 +84,9 @@ def build_report(today, cutoff, djinni, dou, errors):
         out.append("> ⚠️ Помилки скрапінгу: %s" % json.dumps(errors, ensure_ascii=False))
         out.append("")
 
+    # iGaming matches are pulled out of the per-source blocks and shown first.
+    if igaming:
+        _section(out, "🎰 iGaming", igaming)
     _section(out, "Вакансії Djinni", djinni)
     _section(out, "Вакансії DOU", dou)
     return "\n".join(out)
@@ -100,7 +116,15 @@ def main():
     djinni = window_sorted("djinni")
     dou = window_sorted("dou")
 
-    report = build_report(today, cutoff, djinni, dou, errors)
+    # Pull iGaming vacancies out of both source lists into a top block. They
+    # keep their source label but are not repeated in the per-source blocks.
+    igaming = [v for v in djinni + dou if is_igaming(v)]
+    igaming.sort(key=lambda x: x["title"].lower())
+    igaming.sort(key=lambda x: x["date_posted"], reverse=True)
+    djinni = [v for v in djinni if not is_igaming(v)]
+    dou = [v for v in dou if not is_igaming(v)]
+
+    report = build_report(today, cutoff, igaming, djinni, dou, errors)
     os.makedirs(REPORTS_DIR, exist_ok=True)
     report_path = os.path.join(REPORTS_DIR, "report-%s.md" % today)
     with open(report_path, "w", encoding="utf-8") as fh:
@@ -108,8 +132,8 @@ def main():
 
     print("Report: %s" % report_path)
     print(
-        "Window %s..%s | Djinni %d | DOU %d | errors: %s"
-        % (cutoff, today, len(djinni), len(dou), errors or "none")
+        "Window %s..%s | iGaming %d | Djinni %d | DOU %d | errors: %s"
+        % (cutoff, today, len(igaming), len(djinni), len(dou), errors or "none")
     )
     return 0
 
