@@ -39,10 +39,12 @@ The report is printed to `reports/` and a one-line summary to stdout.
 A GitHub Actions workflow ([.github/workflows/daily.yml](.github/workflows/daily.yml))
 runs `daily_report.py` twice a day, at 10:00 and 21:00 Europe/Kyiv (cron
 `0 7 * * *` and `0 18 * * *` UTC; the schedule is fixed to UTC, so the local
-times shift by an hour across daylight-saving changes), then commits and pushes
-the new report back to this repository. GitHub-hosted runners have full outbound network access; the
-scraping runs there because the Claude Code cloud sandbox blocks outbound
-connections to the job boards by organization egress policy.
+times shift by an hour across daylight-saving changes). Instead of pushing to
+`main` directly, each run opens a pull request with the new report on a
+short-lived branch and merges it automatically — `main` is protected so every
+change lands through a PR. GitHub-hosted runners have full outbound network
+access; the scraping runs there because the Claude Code cloud sandbox blocks
+outbound connections to the job boards by organization egress policy.
 
 Trigger a run by hand any time from the Actions tab (**Run workflow**) or with:
 
