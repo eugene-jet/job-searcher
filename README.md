@@ -5,7 +5,7 @@ Daily report of Product Design and UI/UX vacancies from
 [Djinni](https://djinni.co/jobs/?primary_keyword=Design).
 
 Each run scrapes both boards and writes a dated Markdown report to `reports/`
-listing the vacancies **published within the last two days** (by each board's
+listing the vacancies **published within the last three days** (by each board's
 own posting date), split into a **Djinni** section and a **DOU** section,
 newest first.
 
@@ -19,8 +19,8 @@ newest first.
   including its `datePosted`. Only titles matching the Product Design / UI/UX
   filter are kept.
 - `daily_report.py` — runs the scrapers, keeps the vacancies whose posting date
-  falls within the window (`WINDOW_DAYS`, default 2 = today + yesterday), groups
-  them by source, sorts newest first, and writes
+  falls within the window (`WINDOW_DAYS`, default 3 = today and the two previous
+  days), groups them by source, sorts newest first, and writes
   `reports/report-YYYY-MM-DD.md`.
 
 If a source fails to load, the report notes the error; if both fail the script
@@ -37,10 +37,10 @@ The report is printed to `reports/` and a one-line summary to stdout.
 ## Automation
 
 A GitHub Actions workflow ([.github/workflows/daily.yml](.github/workflows/daily.yml))
-runs `daily_report.py` once a day at 10:00 Europe/Kyiv (cron `0 7 * * *` UTC;
-the schedule is fixed to UTC, so the local time shifts by an hour across
-daylight-saving changes), then commits and pushes the new report back to this
-repository. GitHub-hosted runners have full outbound network access; the
+runs `daily_report.py` twice a day, at 10:00 and 21:00 Europe/Kyiv (cron
+`0 7 * * *` and `0 18 * * *` UTC; the schedule is fixed to UTC, so the local
+times shift by an hour across daylight-saving changes), then commits and pushes
+the new report back to this repository. GitHub-hosted runners have full outbound network access; the
 scraping runs there because the Claude Code cloud sandbox blocks outbound
 connections to the job boards by organization egress policy.
 

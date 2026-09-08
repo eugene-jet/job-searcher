@@ -19,8 +19,9 @@ import scrapers
 ROOT = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(ROOT, "reports")
 
-# How many calendar days back to include, counting today. 2 = today + yesterday.
-WINDOW_DAYS = 2
+# How many calendar days back to include, counting today. 3 = today + the two
+# previous days.
+WINDOW_DAYS = 3
 
 SOURCE_LABEL = {"dou": "DOU", "djinni": "Djinni"}
 
