@@ -37,10 +37,21 @@ The report is printed to `reports/` and a one-line summary to stdout.
 
 ## Automation
 
-A scheduled Claude Code cloud routine runs `daily_report.py` once a day, then
-commits and pushes the new report and updated `state.json` back to this
-repository. To read the latest report, either open the newest file in
-`reports/` on GitHub or pull the repository locally:
+A GitHub Actions workflow ([.github/workflows/daily.yml](.github/workflows/daily.yml))
+runs `daily_report.py` once a day at 09:00 Europe/Kyiv (cron `0 6 * * *` UTC),
+then commits and pushes the new report and updated `state.json` back to this
+repository. GitHub-hosted runners have full outbound network access; the
+scraping runs there because the Claude Code cloud sandbox blocks outbound
+connections to the job boards by organization egress policy.
+
+Trigger a run by hand any time from the Actions tab (**Run workflow**) or with:
+
+```bash
+gh workflow run "Daily design vacancy report"
+```
+
+To read the latest report, open the newest file in `reports/` on GitHub or pull
+the repository locally:
 
 ```bash
 git pull
