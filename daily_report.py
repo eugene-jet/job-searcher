@@ -46,25 +46,27 @@ def is_igaming(vac):
     return bool(_IGAMING.search(text))
 
 
-def vac_line(vac):
+def vac_line(vac, today):
     label = SOURCE_LABEL.get(vac["source"], vac["source"])
     loc = vac.get("location") or "—"
     date = vac.get("date_posted") or "—"
-    return "- **%s** — %s · %s · _%s_ · [%s](%s)" % (
+    # Highlight today's postings with a bold date; older ones stay italic.
+    date_md = "**%s**" % date if date == today else "_%s_" % date
+    return "- **%s** — %s · %s · %s · [%s](%s)" % (
         vac["title"],
         vac["company"] or "—",
         loc,
-        date,
+        date_md,
         label,
         vac["url"],
     )
 
 
-def _section(out, heading, items):
+def _section(out, heading, items, today):
     out.append("## %s (%d)" % (heading, len(items)))
     out.append("")
     if items:
-        out.extend(vac_line(v) for v in items)
+        out.extend(vac_line(v, today) for v in items)
     else:
         out.append("_Немає за період._")
     out.append("")
@@ -88,9 +90,9 @@ def build_report(today, cutoff, igaming, djinni, dou, errors):
 
     # iGaming matches are pulled out of the per-source blocks and shown first.
     if igaming:
-        _section(out, "iGaming", igaming)
-    _section(out, "Вакансії Djinni", djinni)
-    _section(out, "Вакансії DOU", dou)
+        _section(out, "iGaming", igaming, today)
+    _section(out, "Вакансії Djinni", djinni, today)
+    _section(out, "Вакансії DOU", dou, today)
     return "\n".join(out)
 
 
@@ -108,17 +110,19 @@ def _esc(text):
     )
 
 
-def _tg_vac_line(vac, with_source):
+def _tg_vac_line(vac, with_source, today):
     label = SOURCE_LABEL.get(vac["source"], vac["source"])
     loc = _esc(vac.get("location") or "—")
     date = vac.get("date_posted") or "—"
+    # Bold today's date so fresh postings stand out.
+    date_html = "<b>%s</b>" % date if date == today else date
     src = (" [%s]" % label) if with_source else ""
     return '• <a href="%s">%s</a> — %s · %s · %s%s' % (
         vac["url"],
         _esc(vac["title"]),
         _esc(vac["company"] or "—"),
         loc,
-        date,
+        date_html,
         src,
     )
 
@@ -135,7 +139,7 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou):
             return
         lines.append("")
         lines.append("<b>%s (%d)</b>" % (heading, len(items)))
-        lines.extend(_tg_vac_line(v, with_source) for v in items)
+        lines.extend(_tg_vac_line(v, with_source, today) for v in items)
 
     add_block("iGaming", igaming, True)
     add_block("Djinni", djinni, False)
