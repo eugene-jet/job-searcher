@@ -47,20 +47,18 @@ def is_igaming(vac):
 
 
 def _fmt_date(iso):
-    """Format an ISO date as dd/mm/yy for display; pass through anything else."""
+    """Format an ISO date as dd-mm-yyyy for display; pass through anything else."""
     try:
-        return datetime.datetime.strptime(iso, "%Y-%m-%d").strftime("%d/%m/%y")
+        return datetime.datetime.strptime(iso, "%Y-%m-%d").strftime("%d-%m-%Y")
     except (ValueError, TypeError):
         return iso or "—"
 
 
-def vac_line(vac, today):
+def vac_line(vac):
     label = SOURCE_LABEL.get(vac["source"], vac["source"])
     loc = vac.get("location") or "—"
     raw = vac.get("date_posted") or ""
-    disp = _fmt_date(raw) if raw else "—"
-    # Highlight today's postings with a bold date; older ones stay italic.
-    date_md = "**%s**" % disp if raw == today else "_%s_" % disp
+    date_md = "_%s_" % (_fmt_date(raw) if raw else "—")
     return "- **%s** — %s · %s · %s · [%s](%s)" % (
         vac["title"],
         vac["company"] or "—",
@@ -71,11 +69,11 @@ def vac_line(vac, today):
     )
 
 
-def _section(out, heading, items, today):
+def _section(out, heading, items):
     out.append("## %s (%d)" % (heading, len(items)))
     out.append("")
     if items:
-        out.extend(vac_line(v, today) for v in items)
+        out.extend(vac_line(v) for v in items)
     else:
         out.append("_Немає за період._")
     out.append("")
@@ -99,9 +97,9 @@ def build_report(today, cutoff, igaming, djinni, dou, errors):
 
     # iGaming matches are pulled out of the per-source blocks and shown first.
     if igaming:
-        _section(out, "iGaming", igaming, today)
-    _section(out, "Вакансії Djinni", djinni, today)
-    _section(out, "Вакансії DOU", dou, today)
+        _section(out, "iGaming", igaming)
+    _section(out, "Вакансії Djinni", djinni)
+    _section(out, "Вакансії DOU", dou)
     return "\n".join(out)
 
 
@@ -119,13 +117,11 @@ def _esc(text):
     )
 
 
-def _tg_vac_line(vac, with_source, today):
+def _tg_vac_line(vac, with_source):
     label = SOURCE_LABEL.get(vac["source"], vac["source"])
     loc = _esc(vac.get("location") or "—")
     raw = vac.get("date_posted") or ""
-    disp = _fmt_date(raw) if raw else "—"
-    # Bold today's date so fresh postings stand out.
-    date_html = "<b>%s</b>" % disp if raw == today else disp
+    date_html = _fmt_date(raw) if raw else "—"
     src = (" [%s]" % label) if with_source else ""
     return '• <a href="%s">%s</a> — %s · %s · %s%s' % (
         vac["url"],
@@ -149,7 +145,7 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou):
             return
         lines.append("")
         lines.append("<b>%s (%d)</b>" % (heading, len(items)))
-        lines.extend(_tg_vac_line(v, with_source, today) for v in items)
+        lines.extend(_tg_vac_line(v, with_source) for v in items)
 
     add_block("iGaming", igaming, True)
     add_block("Djinni", djinni, False)
