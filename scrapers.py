@@ -173,6 +173,33 @@ def fetch_dou(max_pages=40):
     return unique
 
 
+# The DOU vacancy body lives in a "b-typo vacancy-section" div and ends where
+# the reply/apply block begins.
+_DOU_DESC = re.compile(
+    r'class="b-typo vacancy-section">(.*?)<div class="reply', re.S
+)
+
+
+def fetch_dou_description(url):
+    """Return the plain-text body of a single DOU vacancy page, or "".
+
+    Used to detect keywords (e.g. iGaming) that appear in the description but
+    not in the title. Network or parse failures degrade to an empty string.
+    """
+    try:
+        opener, _ = _build_opener()
+        with opener.open(url, timeout=20) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 - detection is best-effort
+        return ""
+    m = _DOU_DESC.search(html)
+    if m:
+        return _clean(m.group(1))
+    # Fallback: a bounded slice from the section start if the reply anchor moved.
+    start = html.find("b-typo vacancy-section")
+    return _clean(html[start:start + 12000]) if start != -1 else ""
+
+
 # --- Djinni ----------------------------------------------------------------
 
 _LD_BLOCK = re.compile(
@@ -214,6 +241,9 @@ def _parse_djinni_ld(html):
                     "url": url,
                     "location": "Remote" if j.get("jobLocationType") == "TELECOMMUTE" else loc,
                     "date_posted": posted,
+                    # The list JSON-LD already carries the full description, so
+                    # Djinni needs no per-vacancy fetch to search its text.
+                    "description": _clean(j.get("description", "")),
                 }
             )
     return items

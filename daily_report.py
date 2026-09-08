@@ -27,14 +27,19 @@ WINDOW_DAYS = 3
 SOURCE_LABEL = {"dou": "DOU", "djinni": "Djinni"}
 
 # Vacancies that mention iGaming get pulled into their own block at the top.
-# Only the scraped fields (title, company, location) are searched — job
-# descriptions are not fetched.
+# Djinni descriptions arrive with the listing; DOU descriptions are fetched per
+# vacancy in main() and stashed under "description" before this runs.
 _IGAMING = re.compile(r"i[\s-]?gaming", re.IGNORECASE)
 
 
 def is_igaming(vac):
     text = " ".join(
-        (vac.get("title", ""), vac.get("company", ""), vac.get("location", ""))
+        (
+            vac.get("title", ""),
+            vac.get("company", ""),
+            vac.get("location", ""),
+            vac.get("description", ""),
+        )
     )
     return bool(_IGAMING.search(text))
 
@@ -115,6 +120,13 @@ def main():
 
     djinni = window_sorted("djinni")
     dou = window_sorted("dou")
+
+    # DOU listings carry no description, so open each DOU vacancy in the window
+    # and stash its body text — but skip the fetch when the title/company
+    # already flags it as iGaming.
+    for v in dou:
+        if not is_igaming(v):
+            v["description"] = scrapers.fetch_dou_description(v["url"])
 
     # Pull iGaming vacancies out of both source lists into a top block. They
     # keep their source label but are not repeated in the per-source blocks.

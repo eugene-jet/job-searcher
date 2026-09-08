@@ -7,8 +7,10 @@ Daily report of Product Design and UI/UX vacancies from
 Each run scrapes both boards and writes a dated Markdown report to `reports/`
 listing the vacancies **published within the last three days** (by each board's
 own posting date), split into a **Djinni** section and a **DOU** section,
-newest first. Vacancies that mention **iGaming** (in the scraped title, company,
-or location) are pulled into a separate block above the Djinni section.
+newest first. Vacancies that mention **iGaming** are pulled into a separate
+block above the Djinni section — the match looks at the title, company,
+location, and the full job description (Djinni descriptions come with the
+listing; each DOU vacancy in the window is opened to read its body).
 
 ## How it works
 
