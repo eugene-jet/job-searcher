@@ -24,9 +24,14 @@ DOU_XHR = "https://jobs.dou.ua/vacancies/xhr-load/?category=Design"
 # Djinni scopes its listing by canonical primary-keyword tags, not by title
 # text. "Design" is not one of those tags and returns an unrelated grab-bag
 # (Web, Brand, Motion, Graphic...), so filter on the two tags we actually want.
-DJINNI_URL = (
-    "https://djinni.co/jobs/?primary_keyword=Product%20Design"
-    "&primary_keyword=UI%20UX"
+#
+# Passing both tags in one URL (primary_keyword=A&primary_keyword=B) does NOT
+# union them: Djinni collapses it to a single truncated page of ~15 results, so
+# vacancies past that page are silently lost. Fetch each tag as its own
+# paginated listing instead and merge the results by id.
+DJINNI_URLS = (
+    "https://djinni.co/jobs/?primary_keyword=Product%20Design",
+    "https://djinni.co/jobs/?primary_keyword=UI%20UX",
 )
 
 # Titles we care about: Product Design and UI/UX families.
@@ -258,17 +263,19 @@ def _parse_djinni_ld(html):
 def fetch_djinni(max_pages=20):
     opener, _ = _build_opener()
     items = []
-    for page in range(1, max_pages + 1):
-        url = "%s&page=%d" % (DJINNI_URL, page)
-        with opener.open(url, timeout=30) as resp:
-            html = resp.read().decode("utf-8", "replace")
-        page_items = _parse_djinni_ld(html)
-        if not page_items:
-            break
-        items.extend(page_items)
-        if 'rel="next"' not in html and "rel=next" not in html:
-            break
+    for base in DJINNI_URLS:
+        for page in range(1, max_pages + 1):
+            url = "%s&page=%d" % (base, page)
+            with opener.open(url, timeout=30) as resp:
+                html = resp.read().decode("utf-8", "replace")
+            page_items = _parse_djinni_ld(html)
+            if not page_items:
+                break
+            items.extend(page_items)
+            if 'rel="next"' not in html and "rel=next" not in html:
+                break
 
+    # De-duplicate by id: a vacancy tagged with both keywords is listed twice.
     seen, unique = set(), []
     for it in items:
         if it["id"] in seen:
