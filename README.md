@@ -73,9 +73,12 @@ stdout. Telegram delivery is skipped locally — it only sends when the
   and its Ukrainian "day month" list date is parsed; Djinni is read from the
   `JobPosting` JSON-LD on each results page, including its `datePosted`. Only
   titles matching the Product Design / UI/UX filter are kept.
-- **`daily_report.py`** runs the scrapers, keeps the vacancies whose posting date
-  falls within the window (`WINDOW_DAYS`, default 3 = today and the two previous
-  days), groups them by source, sorts newest first, stamps the generation time in
+- **`daily_report.py`** runs the scrapers and, for each kept Djinni vacancy, reads
+  the vacancy page's "Оновлено" (updated) date and uses it in place of the
+  published date when present, so a re-bumped posting resurfaces. It keeps the
+  vacancies whose date falls within the window (`WINDOW_DAYS`, default 3 = today
+  and the two previous days), groups them by source, sorts newest first, stamps
+  the generation time in
   Europe/Kyiv, writes the Markdown report, and sends the Telegram message(s). If
   a source fails, the report notes the error; if both fail it exits non-zero so
   no empty report is committed.

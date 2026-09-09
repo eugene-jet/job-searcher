@@ -226,6 +226,15 @@ def main():
         sys.stderr.write("Both scrapers failed: %s\n" % errors)
         return 1
 
+    # Djinni's list only exposes the published date, but a posting can be bumped
+    # afterwards. Rank by the "Оновлено" (updated) date when the vacancy page
+    # exposes one so a re-bumped posting resurfaces; keep the published date
+    # otherwise. Done before windowing because the update date decides the window.
+    for v in data["djinni"]:
+        updated = scrapers.fetch_djinni_updated(v["url"], today_d)
+        if updated:
+            v["date_posted"] = updated
+
     def window_sorted(source):
         items = [v for v in data[source] if (v.get("date_posted") or "") >= cutoff]
         # Newest first; alphabetical by title within the same day.
