@@ -16,8 +16,13 @@ import re
 import sys
 import urllib.parse
 import urllib.request
+from zoneinfo import ZoneInfo
 
 import scrapers
+
+# Timezone the report is written for. The GitHub runner's clock is UTC, so the
+# "generated at" stamp is converted into this zone before display.
+KYIV_TZ = ZoneInfo("Europe/Kyiv")
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(ROOT, "reports")
@@ -86,9 +91,11 @@ def _section(out, heading, items, with_source):
     out.append("")
 
 
-def build_report(today, cutoff, igaming, djinni, dou, errors):
+def build_report(today, cutoff, igaming, djinni, dou, errors, sent_at):
     out = []
     out.append("# Design вакансії — %s" % _fmt_date(today))
+    out.append("")
+    out.append("🕒 Згенеровано: **%s (Київ)**" % sent_at)
     out.append("")
     out.append("Джерела: DOU + Djinni. Фільтр: Product Design, UI/UX.")
     out.append("")
@@ -138,10 +145,11 @@ def _tg_vac_line(vac, with_source):
     return line
 
 
-def build_telegram_messages(today, cutoff, igaming, djinni, dou):
+def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at):
     """Render the report as one or more HTML messages under Telegram's limit."""
     lines = [
         "<b>Design вакансії 🧑‍💻✨</b>",
+        "🕒 <b>%s</b> (Київ)" % _esc(sent_at),
         "За останні %d дні (%s/%s)" % (WINDOW_DAYS, _fmt_date(cutoff)[:2], _fmt_date(today)),
     ]
 
@@ -203,7 +211,9 @@ def send_telegram(token, chat_id, messages):
 
 
 def main():
-    today_d = datetime.date.today()
+    now_kyiv = datetime.datetime.now(KYIV_TZ)
+    sent_at = now_kyiv.strftime("%d-%m-%Y %H:%M")
+    today_d = now_kyiv.date()
     today = today_d.isoformat()
     cutoff = (today_d - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat()
 
@@ -241,7 +251,7 @@ def main():
     djinni = [v for v in djinni if not is_igaming(v)]
     dou = [v for v in dou if not is_igaming(v)]
 
-    report = build_report(today, cutoff, igaming, djinni, dou, errors)
+    report = build_report(today, cutoff, igaming, djinni, dou, errors, sent_at)
     os.makedirs(REPORTS_DIR, exist_ok=True)
     report_path = os.path.join(REPORTS_DIR, "report-%s.md" % today)
     with open(report_path, "w", encoding="utf-8") as fh:
@@ -257,7 +267,7 @@ def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if token and chat_id:
-        messages = build_telegram_messages(today, cutoff, igaming, djinni, dou)
+        messages = build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at)
         ok = send_telegram(token, chat_id, messages)
         print("Telegram: sent %d message(s), ok=%s" % (len(messages), ok))
 
