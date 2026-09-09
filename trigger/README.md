@@ -54,11 +54,11 @@ curl "https://job-searcher-trigger.<your-subdomain>.workers.dev/?key=<TRIGGER_SE
 A `dispatched` response means the workflow was started; check the Actions tab
 and Telegram. (If you did not set `TRIGGER_SECRET`, drop the `?key=` part.)
 
-## After it works: stop the duplicate GitHub schedule
+## The Worker is the only scheduler
 
-While both triggers are active you may get two runs per slot (the punctual
-Worker one, plus the late GitHub-scheduled one). Once the Worker is verified,
-remove the two `schedule:` cron lines from
-[`.github/workflows/daily.yml`](../.github/workflows/daily.yml) so the Worker is
-the sole trigger. Keep `workflow_dispatch: {}` — that is the entry point the
-Worker uses, and it also lets you run the report manually from the Actions tab.
+[`.github/workflows/daily.yml`](../.github/workflows/daily.yml) no longer
+declares a `schedule:` — this Worker is the sole timed trigger, so there are no
+duplicate runs. The workflow keeps `workflow_dispatch: {}`, which is the entry
+point the Worker uses and also lets you run the report manually from the Actions
+tab. **Deploy this Worker before relying on the schedule**: with the GitHub cron
+gone, nothing fires the report until the Worker is live.
