@@ -54,7 +54,18 @@ def is_relevant(title):
 def _build_opener():
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-    opener.addheaders = [("User-Agent", USER_AGENT)]
+    # Send the headers a real browser would. Djinni serves a bare User-Agent
+    # request a differently ordered (and easier to truncate) listing than a
+    # browser-like one; the Ukrainian Accept-Language in particular changes
+    # which vacancies land on the first result pages. No Accept-Encoding: urllib
+    # would not transparently decode a gzip response. No Referer here either, so
+    # the DOU XHR calls keep setting their own.
+    opener.addheaders = [
+        ("User-Agent", USER_AGENT),
+        ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+        ("Accept-Language", "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"),
+        ("Upgrade-Insecure-Requests", "1"),
+    ]
     return opener, jar
 
 
@@ -262,26 +273,30 @@ def _parse_djinni_ld(html):
 
 def fetch_djinni(max_pages=20):
     opener, _ = _build_opener()
-    items = []
+    seen, unique = set(), []
     for base in DJINNI_URLS:
+        # Djinni's rel="next" marker is unreliable — a middle page can omit it
+        # while later pages still hold results — so don't trust it to end
+        # pagination. Walk pages until one adds no vacancy id new to THIS tag (an
+        # empty page, or Djinni clamping an out-of-range page to a repeat),
+        # bounded by max_pages. The stop is tracked per tag, while `seen`
+        # de-duplicates the combined output (a vacancy can carry both keywords).
+        tag_seen = set()
         for page in range(1, max_pages + 1):
             url = "%s&page=%d" % (base, page)
             with opener.open(url, timeout=30) as resp:
                 html = resp.read().decode("utf-8", "replace")
-            page_items = _parse_djinni_ld(html)
-            if not page_items:
+            fresh = False
+            for it in _parse_djinni_ld(html):
+                if it["id"] in tag_seen:
+                    continue
+                tag_seen.add(it["id"])
+                fresh = True
+                if it["id"] not in seen:
+                    seen.add(it["id"])
+                    unique.append(it)
+            if not fresh:
                 break
-            items.extend(page_items)
-            if 'rel="next"' not in html and "rel=next" not in html:
-                break
-
-    # De-duplicate by id: a vacancy tagged with both keywords is listed twice.
-    seen, unique = set(), []
-    for it in items:
-        if it["id"] in seen:
-            continue
-        seen.add(it["id"])
-        unique.append(it)
     return unique
 
 
