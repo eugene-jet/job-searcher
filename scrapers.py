@@ -21,7 +21,13 @@ USER_AGENT = (
 
 DOU_URL = "https://jobs.dou.ua/vacancies/?category=Design"
 DOU_XHR = "https://jobs.dou.ua/vacancies/xhr-load/?category=Design"
-DJINNI_URL = "https://djinni.co/jobs/?primary_keyword=Design"
+# Djinni scopes its listing by canonical primary-keyword tags, not by title
+# text. "Design" is not one of those tags and returns an unrelated grab-bag
+# (Web, Brand, Motion, Graphic...), so filter on the two tags we actually want.
+DJINNI_URL = (
+    "https://djinni.co/jobs/?primary_keyword=Product%20Design"
+    "&primary_keyword=UI%20UX"
+)
 
 # Titles we care about: Product Design and UI/UX families.
 RELEVANT = re.compile(
