@@ -272,6 +272,33 @@ def fetch_djinni(max_pages=20):
     return unique
 
 
+# The list JSON-LD only carries datePosted (the "Опубліковано" date). The
+# vacancy detail page additionally shows an "Оновлено <day> <month>" line when a
+# posting was bumped after publication, in the same year-less Ukrainian format
+# DOU uses. Match the day + genitive month that follows the word.
+_DJINNI_UPDATED = re.compile(r"Оновлено\s+(\d{1,2}\s+[а-яіїєґ']+)", re.IGNORECASE)
+
+
+def fetch_djinni_updated(url, today=None):
+    """Return the ISO "Оновлено" (updated) date for a Djinni vacancy, or None.
+
+    Djinni omits the line entirely for a posting that was never updated, so a
+    None result means the caller should keep the published date. Network or
+    parse failures degrade to None for the same reason.
+    """
+    today = today or datetime.date.today()
+    try:
+        opener, _ = _build_opener()
+        with opener.open(url, timeout=20) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 - best-effort, fall back to datePosted
+        return None
+    m = _DJINNI_UPDATED.search(html)
+    if not m:
+        return None
+    return _parse_dou_date(m.group(1), today)
+
+
 def fetch_all(relevant_only=True):
     """Return {'dou': [...], 'djinni': [...]} of vacancies.
 
