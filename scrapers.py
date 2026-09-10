@@ -23,11 +23,15 @@ DOU_URL = "https://jobs.dou.ua/vacancies/?category=Design"
 DOU_XHR = "https://jobs.dou.ua/vacancies/xhr-load/?category=Design"
 # Djinni scopes its listing by canonical primary-keyword tags, not by title
 # text. "Design" is not one of those tags and returns an unrelated grab-bag
-# (Web, Brand, Motion, Graphic...), so filter on the two tags we actually want.
-# Fetch each tag as its own paginated listing and merge the results by id.
+# (Web, Brand, Motion, Graphic...), so scope to the two tags we actually want:
+# Product Design and UI UX. Both are passed to one basic-search listing so the
+# scraper sees the same result set a visitor sees at that URL — including
+# Djinni's default filters, which trim the raw per-tag union (95 at time of
+# writing) down to the ~80 the site shows. Fetching each tag separately would
+# bypass those filters and surface more than the site reports.
 DJINNI_URLS = (
-    "https://djinni.co/jobs/?primary_keyword=Product%20Design",
-    "https://djinni.co/jobs/?primary_keyword=UI%20UX",
+    "https://djinni.co/jobs/?search_type=basic-search"
+    "&primary_keyword=Product%20Design&primary_keyword=UI%20UX",
 )
 
 # Djinni serves 15 vacancies per results page. Once the real results run out on
@@ -287,12 +291,11 @@ def fetch_djinni(max_pages=20):
         # Djinni's rel="next" marker is unreliable — a middle page can omit it
         # while later pages still hold results — so don't trust it to end
         # pagination. Walk pages until one is short (fewer than DJINNI_PAGE_SIZE,
-        # i.e. the last page of real results, after which Djinni pads the tag
-        # with a page of recommended vacancies) or adds no vacancy id new to THIS
-        # tag (an empty page, or Djinni clamping an out-of-range page to a
-        # repeat), bounded by max_pages. The stop is tracked per tag, while
-        # `seen` de-duplicates the combined output (a vacancy can carry both
-        # keywords).
+        # i.e. the last page of real results, after which Djinni pads the listing
+        # with a page of recommended vacancies) or adds no new vacancy id (an
+        # empty page, or Djinni clamping an out-of-range page to a repeat),
+        # bounded by max_pages. `seen` de-duplicates in case DJINNI_URLS ever
+        # holds more than the single combined listing again.
         tag_seen = set()
         for page in range(1, max_pages + 1):
             url = "%s&page=%d" % (base, page)
