@@ -4,3 +4,4 @@ __pycache__/
 cj.txt
 xhr.json
 .DS_Store
+.wrangler/

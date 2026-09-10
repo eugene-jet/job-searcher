@@ -331,12 +331,16 @@ def fetch_all(relevant_only=True):
     """Return {'dou': [...], 'djinni': [...]} of vacancies.
 
     Each source is fetched independently; a failure in one does not abort the
-    other. Errors are attached under the '_errors' key.
+    other. Errors are attached under the '_errors' key. The '_totals' key holds
+    the raw number of vacancies each board returned *before* the relevance
+    title filter, so the report can show "kept/scanned" per source; a source
+    that failed is absent from '_totals'.
     """
-    result = {"dou": [], "djinni": [], "_errors": {}}
+    result = {"dou": [], "djinni": [], "_errors": {}, "_totals": {}}
     for name, fn in (("dou", fetch_dou), ("djinni", fetch_djinni)):
         try:
             found = fn()
+            result["_totals"][name] = len(found)
             if relevant_only:
                 found = [v for v in found if is_relevant(v["title"])]
             result[name] = found

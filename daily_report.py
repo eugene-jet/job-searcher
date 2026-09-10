@@ -69,8 +69,13 @@ def vac_line(vac, with_source):
     return line
 
 
-def _section(out, heading, items, with_source):
-    out.append("## %s (%d)" % (heading, len(items)))
+def _section(out, heading, items, with_source, total=None):
+    # ``total`` is the raw number of vacancies the board returned before the
+    # relevance filter; when given, the heading shows "shown/scanned".
+    if total is None:
+        out.append("## %s (%d)" % (heading, len(items)))
+    else:
+        out.append("## %s (%d/%d)" % (heading, len(items), total))
     out.append("")
     if not items:
         out.append("_Немає за період._")
@@ -91,7 +96,7 @@ def _section(out, heading, items, with_source):
     out.append("")
 
 
-def build_report(today, cutoff, igaming, djinni, dou, errors, sent_at):
+def build_report(today, cutoff, igaming, djinni, dou, errors, sent_at, totals):
     out = []
     out.append("# Design вакансії — %s" % _fmt_date(today))
     out.append("")
@@ -112,8 +117,8 @@ def build_report(today, cutoff, igaming, djinni, dou, errors, sent_at):
     # iGaming matches are pulled out of the per-source blocks and shown first.
     if igaming:
         _section(out, "🟣 iGaming", igaming, with_source=True)
-    _section(out, "🟠 Вакансії Djinni", djinni, with_source=False)
-    _section(out, "🟢 Вакансії DOU", dou, with_source=False)
+    _section(out, "🟠 Вакансії Djinni", djinni, with_source=False, total=totals.get("djinni"))
+    _section(out, "🟢 Вакансії DOU", dou, with_source=False, total=totals.get("dou"))
     return "\n".join(out)
 
 
@@ -145,7 +150,7 @@ def _tg_vac_line(vac, with_source):
     return line
 
 
-def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at):
+def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals):
     """Render the report as one or more HTML messages under Telegram's limit."""
     lines = [
         "<b>Design вакансії 🧑‍💻✨</b>",
@@ -153,11 +158,14 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at):
         "За останні %d дні (%s/%s)" % (WINDOW_DAYS, _fmt_date(cutoff)[:2], _fmt_date(today)),
     ]
 
-    def add_block(heading, items, with_source):
+    def add_block(heading, items, with_source, total=None):
         if not items:
             return
         lines.append("")
-        lines.append("<b>%s (%d)</b>" % (heading, len(items)))
+        if total is None:
+            lines.append("<b>%s (%d)</b>" % (heading, len(items)))
+        else:
+            lines.append("<b>%s (%d/%d)</b>" % (heading, len(items), total))
         last = None
         for v in items:
             date = _fmt_date(v.get("date_posted") or "—")
@@ -167,8 +175,8 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at):
             lines.append(_tg_vac_line(v, with_source))
 
     add_block("🟣 iGaming", igaming, True)
-    add_block("🟠 Djinni", djinni, False)
-    add_block("🟢 DOU", dou, False)
+    add_block("🟠 Djinni", djinni, False, totals.get("djinni"))
+    add_block("🟢 DOU", dou, False, totals.get("dou"))
 
     if not igaming and not djinni and not dou:
         lines.append("")
@@ -219,6 +227,7 @@ def main():
 
     data = scrapers.fetch_all(relevant_only=True)
     errors = data.get("_errors", {})
+    totals = data.get("_totals", {})
 
     # If BOTH sources failed, exit non-zero so the run is visibly broken and no
     # empty report gets committed.
@@ -260,7 +269,7 @@ def main():
     djinni = [v for v in djinni if not is_igaming(v)]
     dou = [v for v in dou if not is_igaming(v)]
 
-    report = build_report(today, cutoff, igaming, djinni, dou, errors, sent_at)
+    report = build_report(today, cutoff, igaming, djinni, dou, errors, sent_at, totals)
     os.makedirs(REPORTS_DIR, exist_ok=True)
     report_path = os.path.join(REPORTS_DIR, "report-%s.md" % today)
     with open(report_path, "w", encoding="utf-8") as fh:
@@ -268,15 +277,24 @@ def main():
 
     print("Report: %s" % report_path)
     print(
-        "Window %s..%s | iGaming %d | Djinni %d | DOU %d | errors: %s"
-        % (cutoff, today, len(igaming), len(djinni), len(dou), errors or "none")
+        "Window %s..%s | iGaming %d | Djinni %d/%s | DOU %d/%s | errors: %s"
+        % (
+            cutoff,
+            today,
+            len(igaming),
+            len(djinni),
+            totals.get("djinni", "?"),
+            len(dou),
+            totals.get("dou", "?"),
+            errors or "none",
+        )
     )
 
     # Deliver to Telegram as inline messages when configured (skipped locally).
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if token and chat_id:
-        messages = build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at)
+        messages = build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals)
         ok = send_telegram(token, chat_id, messages)
         print("Telegram: sent %d message(s), ok=%s" % (len(messages), ok))
 
