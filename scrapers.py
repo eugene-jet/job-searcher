@@ -23,16 +23,22 @@ DOU_URL = "https://jobs.dou.ua/vacancies/?category=Design"
 DOU_XHR = "https://jobs.dou.ua/vacancies/xhr-load/?category=Design"
 # Djinni scopes its listing by canonical primary-keyword tags, not by title
 # text. "Design" is not one of those tags and returns an unrelated grab-bag
-# (Web, Brand, Motion, Graphic...), so filter on the two tags we actually want.
-#
-# Passing both tags in one URL (primary_keyword=A&primary_keyword=B) does NOT
-# union them: Djinni collapses it to a single truncated page of ~15 results, so
-# vacancies past that page are silently lost. Fetch each tag as its own
-# paginated listing instead and merge the results by id.
+# (Web, Brand, Motion, Graphic...), so scope to the two tags we actually want:
+# Product Design and UI UX. Both are passed to one basic-search listing so the
+# scraper sees the same result set a visitor sees at that URL — including
+# Djinni's default filters, which trim the raw per-tag union (95 at time of
+# writing) down to the ~80 the site shows. Fetching each tag separately would
+# bypass those filters and surface more than the site reports.
 DJINNI_URLS = (
-    "https://djinni.co/jobs/?primary_keyword=Product%20Design",
-    "https://djinni.co/jobs/?primary_keyword=UI%20UX",
+    "https://djinni.co/jobs/?search_type=basic-search"
+    "&primary_keyword=Product%20Design&primary_keyword=UI%20UX",
 )
+
+# Djinni serves 15 vacancies per results page. Once the real results run out on
+# a partial page, Djinni appends a further full page of *recommended* vacancies
+# with fresh ids; pagination stops at the first short page so those extras stay
+# out of the listing.
+DJINNI_PAGE_SIZE = 15
 
 # Titles we care about: Product Design and UI/UX families.
 RELEVANT = re.compile(
@@ -162,7 +168,13 @@ def fetch_dou(max_pages=40):
         if c.name == "csrftoken":
             csrf = c.value
 
-    count = 20
+    # DOU's xhr-load `count` parameter is the offset — the number of vacancies
+    # already loaded — and each response returns the next batch. Advance the
+    # offset by however many the batch actually held; the response's `num` is
+    # the batch size (e.g. 40), not a cumulative offset, so assigning it back
+    # would pin the offset at one batch width and re-request the same window
+    # every page, leaving de-duplication to collapse the run to ~80 vacancies.
+    count = len(items)
     for _ in range(max_pages):
         if not csrf:
             break
@@ -180,9 +192,10 @@ def fetch_dou(max_pages=40):
         )
         with opener.open(req, timeout=30) as resp:
             payload = json.loads(resp.read().decode("utf-8", "replace"))
-        items.extend(_parse_dou_html(payload.get("html", "")))
-        count = payload.get("num", count + 20)
-        if payload.get("last"):
+        batch = _parse_dou_html(payload.get("html", ""))
+        items.extend(batch)
+        count += len(batch)
+        if payload.get("last") or not batch:
             break
 
     # De-duplicate by vacancy id (pages can overlap).
@@ -277,17 +290,20 @@ def fetch_djinni(max_pages=20):
     for base in DJINNI_URLS:
         # Djinni's rel="next" marker is unreliable — a middle page can omit it
         # while later pages still hold results — so don't trust it to end
-        # pagination. Walk pages until one adds no vacancy id new to THIS tag (an
+        # pagination. Walk pages until one is short (fewer than DJINNI_PAGE_SIZE,
+        # i.e. the last page of real results, after which Djinni pads the listing
+        # with a page of recommended vacancies) or adds no new vacancy id (an
         # empty page, or Djinni clamping an out-of-range page to a repeat),
-        # bounded by max_pages. The stop is tracked per tag, while `seen`
-        # de-duplicates the combined output (a vacancy can carry both keywords).
+        # bounded by max_pages. `seen` de-duplicates in case DJINNI_URLS ever
+        # holds more than the single combined listing again.
         tag_seen = set()
         for page in range(1, max_pages + 1):
             url = "%s&page=%d" % (base, page)
             with opener.open(url, timeout=30) as resp:
                 html = resp.read().decode("utf-8", "replace")
+            page_items = _parse_djinni_ld(html)
             fresh = False
-            for it in _parse_djinni_ld(html):
+            for it in page_items:
                 if it["id"] in tag_seen:
                     continue
                 tag_seen.add(it["id"])
@@ -295,7 +311,7 @@ def fetch_djinni(max_pages=20):
                 if it["id"] not in seen:
                     seen.add(it["id"])
                     unique.append(it)
-            if not fresh:
+            if not fresh or len(page_items) < DJINNI_PAGE_SIZE:
                 break
     return unique
 
@@ -331,12 +347,16 @@ def fetch_all(relevant_only=True):
     """Return {'dou': [...], 'djinni': [...]} of vacancies.
 
     Each source is fetched independently; a failure in one does not abort the
-    other. Errors are attached under the '_errors' key.
+    other. Errors are attached under the '_errors' key. The '_totals' key holds
+    the raw number of vacancies each board returned *before* the relevance
+    title filter, so the report can show "kept/scanned" per source; a source
+    that failed is absent from '_totals'.
     """
-    result = {"dou": [], "djinni": [], "_errors": {}}
+    result = {"dou": [], "djinni": [], "_errors": {}, "_totals": {}}
     for name, fn in (("dou", fetch_dou), ("djinni", fetch_djinni)):
         try:
             found = fn()
+            result["_totals"][name] = len(found)
             if relevant_only:
                 found = [v for v in found if is_relevant(v["title"])]
             result[name] = found
