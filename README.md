@@ -90,7 +90,7 @@ stdout. Telegram delivery is skipped locally — it only sends when the
 
 The report runs as a GitHub Actions workflow
 ([`.github/workflows/daily.yml`](.github/workflows/daily.yml)). It is triggered
-twice a day — 07:00 and 18:00 UTC (10:00 and 21:00 Europe/Kyiv in summer) — by
+twice a day — 09:00 and 18:00 UTC (12:00 and 21:00 Europe/Kyiv in summer) — by
 the Cloudflare Worker in [`trigger/`](trigger/), which calls the workflow's
 `workflow_dispatch` entry point. GitHub Actions' own `schedule:` was removed: it
 ran on a best-effort basis and routinely fired tens of minutes to several hours

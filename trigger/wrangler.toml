@@ -2,9 +2,9 @@ name = "job-searcher-trigger"
 main = "worker.js"
 compatibility_date = "2025-01-01"
 
-# UTC, matching daily.yml: 07:00 UTC = 10:00 Europe/Kyiv (summer),
+# UTC: 09:00 UTC = 12:00 Europe/Kyiv (summer),
 # 18:00 UTC = 21:00 Europe/Kyiv (summer). Cloudflare cron is UTC-only, just like
 # GitHub's schedule, so the wall-clock time shifts by an hour across DST exactly
 # as it did before — the only thing that changes is punctuality.
 [triggers]
-crons = ["0 7 * * *", "0 18 * * *"]
+crons = ["0 9 * * *", "0 18 * * *"]
