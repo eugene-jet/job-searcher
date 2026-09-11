@@ -51,20 +51,47 @@ dated file such as
 - **Punctual delivery.** A Cloudflare Worker cron fires within about a minute of
   the scheduled time; GitHub Actions' own scheduler was dropped because it ran
   best-effort and often fired hours late.
-- **Zero dependencies.** Pure Python standard library — it runs in a clean
-  environment with no install step.
+- **Analytics over time.** Each run records the day's relevant-vacancy count per
+  board and regenerates an Excel workbook with a line chart, committed to the
+  repo (see [Analytics](#analytics)).
+- **Almost no dependencies.** The scraper and the report are pure Python standard
+  library. The only dependency is `openpyxl`, used solely to write the Excel
+  analytics workbook (the standard library cannot produce an `.xlsx` with a
+  chart).
 - **Archived history.** Every run lands a dated Markdown report through an
   auto-merged pull request, so the archive builds itself.
+
+## Analytics
+
+Alongside the daily digest, every run records how many relevant (Product Design
+/ UI/UX) vacancies each board carried that day and keeps a running time series:
+
+- **[`data/vacancy_counts.csv`](data/vacancy_counts.csv)** is the source of
+  truth — one row per calendar day with the columns `date`, `dou`, `djinni`. A
+  second run on the same day overwrites that day's numbers with the latest; a
+  source that failed to scrape is left blank (a gap), not recorded as `0`.
+- **[`reports/vacancy-analytics.xlsx`](reports/vacancy-analytics.xlsx)** is
+  regenerated from the CSV on each run. Its `Counts` sheet holds the same table
+  plus a line chart of the DOU and Djinni counts over time. Open it in Excel,
+  Numbers, or Google Sheets to see the chart.
+
+Both files are committed by the same auto-merged pull request as the Markdown
+report, so the history builds itself. The workbook's document properties are set
+deterministically from the data, so a run whose counts did not change produces no
+spurious binary diff.
 
 ## Run it locally
 
 ```bash
+pip install -r requirements.txt
 python3 daily_report.py
 ```
 
-This writes `reports/report-YYYY-MM-DD.md` and prints a one-line summary to
-stdout. Telegram delivery is skipped locally — it only sends when the
-`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` environment variables are set.
+This writes `reports/report-YYYY-MM-DD.md`, updates
+`data/vacancy_counts.csv` and `reports/vacancy-analytics.xlsx`, and prints a
+one-line summary to stdout. Telegram delivery is skipped locally — it only sends
+when the `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` environment variables are
+set.
 
 ## How it works
 
@@ -82,6 +109,10 @@ stdout. Telegram delivery is skipped locally — it only sends when the
   Europe/Kyiv, writes the Markdown report, and sends the Telegram message(s). If
   a source fails, the report notes the error; if both fail it exits non-zero so
   no empty report is committed.
+- **`analytics.py`** upserts the day's per-source relevant counts into
+  `data/vacancy_counts.csv` and regenerates `reports/vacancy-analytics.xlsx`
+  (the `Counts` sheet plus a line chart) with openpyxl. See
+  [Analytics](#analytics).
 - **`trigger/`** is a Cloudflare Worker that acts as the clock. Its cron calls
   the workflow's `workflow_dispatch` entry point on time — see
   [`trigger/README.md`](trigger/README.md) for a one-time deploy.
