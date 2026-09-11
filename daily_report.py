@@ -18,6 +18,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
+import analytics
 import scrapers
 
 # Timezone the report is written for. The GitHub runner's clock is UTC, so the
@@ -234,6 +235,16 @@ def main():
     if errors and not data["dou"] and not data["djinni"]:
         sys.stderr.write("Both scrapers failed: %s\n" % errors)
         return 1
+
+    # Record the day's per-source relevant counts before any later mutation of
+    # the lists, then regenerate the Excel workbook + chart from the running CSV.
+    # A source that failed is stored as None (a gap in the chart), not 0.
+    counts = {
+        "dou": None if "dou" in errors else len(data["dou"]),
+        "djinni": None if "djinni" in errors else len(data["djinni"]),
+    }
+    analytics.record_day(counts, today)
+    analytics.build_workbook()
 
     # Djinni's list only exposes the published date, but a posting can be bumped
     # afterwards. Rank by the "Оновлено" (updated) date when the vacancy page
