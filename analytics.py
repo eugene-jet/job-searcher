@@ -1,7 +1,9 @@
 """Time-series analytics for the DOU + Djinni vacancy counts.
 
-Keeps a running daily count of relevant (Product Design / UI/UX) vacancies per
-board in a CSV that acts as the source of truth, and regenerates an Excel
+Keeps a running daily count of the vacancies each board carries — the scanned
+total the board itself reports (DOU's whole Design category, Djinni's Product
+Design + UI/UX tag listing) — in a CSV that acts as the source of truth, and
+regenerates an Excel
 workbook with a line chart from that CSV. Everything but the workbook writer is
 standard library; the workbook needs openpyxl because the standard library
 cannot produce an ``.xlsx`` — let alone one with an embedded chart.
@@ -23,7 +25,7 @@ REPORTS_DIR = os.path.join(ROOT, "reports")
 CSV_PATH = os.path.join(DATA_DIR, "vacancy_counts.csv")
 XLSX_PATH = os.path.join(REPORTS_DIR, "vacancy-analytics.xlsx")
 
-# CSV columns, in order. The two source columns hold the relevant-vacancy count
+# CSV columns, in order. The two source columns hold the scanned vacancy total
 # each board carried that day, or an empty cell when the scrape failed.
 SOURCES = ("dou", "djinni")
 FIELDNAMES = ("date",) + SOURCES
@@ -106,7 +108,7 @@ def build_workbook(csv_path=CSV_PATH, xlsx_path=XLSX_PATH):
     if dates:
         last_row = 1 + len(dates)  # header is row 1, data rows follow
         chart = LineChart()
-        chart.title = "DOU + Djinni — Product Design / UI/UX вакансії"
+        chart.title = "DOU + Djinni — кількість вакансій на борді"
         chart.x_axis.title = "Дата"
         chart.y_axis.title = "Кількість"
         chart.height = 10

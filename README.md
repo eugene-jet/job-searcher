@@ -51,9 +51,9 @@ dated file such as
 - **Punctual delivery.** A Cloudflare Worker cron fires within about a minute of
   the scheduled time; GitHub Actions' own scheduler was dropped because it ran
   best-effort and often fired hours late.
-- **Analytics over time.** Each run records the day's relevant-vacancy count per
-  board and regenerates an Excel workbook with a line chart, committed to the
-  repo (see [Analytics](#analytics)).
+- **Analytics over time.** Each run records the day's scanned vacancy total per
+  board — the count the board itself reports — and regenerates an Excel workbook
+  with a line chart, committed to the repo (see [Analytics](#analytics)).
 - **Almost no dependencies.** The scraper and the report are pure Python standard
   library. The only dependency is `openpyxl`, used solely to write the Excel
   analytics workbook (the standard library cannot produce an `.xlsx` with a
@@ -63,8 +63,10 @@ dated file such as
 
 ## Analytics
 
-Alongside the daily digest, every run records how many relevant (Product Design
-/ UI/UX) vacancies each board carried that day and keeps a running time series:
+Alongside the daily digest, every run records the scanned vacancy total each
+board carried that day — the raw count the board itself shows, before the
+Product Design / UI/UX relevance filter (so DOU's whole Design category and
+Djinni's Product Design + UI/UX tag listing) — and keeps a running time series:
 
 - **[`data/vacancy_counts.csv`](data/vacancy_counts.csv)** is the source of
   truth — one row per calendar day with the columns `date`, `dou`, `djinni`. A
@@ -109,7 +111,8 @@ set.
   Europe/Kyiv, writes the Markdown report, and sends the Telegram message(s). If
   a source fails, the report notes the error; if both fail it exits non-zero so
   no empty report is committed.
-- **`analytics.py`** upserts the day's per-source relevant counts into
+- **`analytics.py`** upserts the day's per-source scanned totals (the raw count
+  each board returns before the relevance filter) into
   `data/vacancy_counts.csv` and regenerates `reports/vacancy-analytics.xlsx`
   (the `Counts` sheet plus a line chart) with openpyxl. See
   [Analytics](#analytics).

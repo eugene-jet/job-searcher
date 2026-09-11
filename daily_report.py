@@ -236,12 +236,15 @@ def main():
         sys.stderr.write("Both scrapers failed: %s\n" % errors)
         return 1
 
-    # Record the day's per-source relevant counts before any later mutation of
-    # the lists, then regenerate the Excel workbook + chart from the running CSV.
-    # A source that failed is stored as None (a gap in the chart), not 0.
+    # Record the day's per-source scanned totals — the raw number each board
+    # returns before the relevance filter, i.e. the count the site itself shows
+    # (DOU's whole Design category, Djinni's Product Design + UI/UX tag listing) —
+    # then regenerate the Excel workbook + chart from the running CSV. A source
+    # that failed is absent from `_totals`, so `.get` yields None, which is stored
+    # as a gap in the chart rather than a real zero.
     counts = {
-        "dou": None if "dou" in errors else len(data["dou"]),
-        "djinni": None if "djinni" in errors else len(data["djinni"]),
+        "dou": totals.get("dou"),
+        "djinni": totals.get("djinni"),
     }
     analytics.record_day(counts, today)
     analytics.build_workbook()
