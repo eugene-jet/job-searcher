@@ -76,6 +76,10 @@ Djinni's Product Design + UI/UX tag listing) — and keeps a running time series
   regenerated from the CSV on each run. Its `Counts` sheet holds the same table
   plus a line chart of the DOU and Djinni counts over time. Open it in Excel,
   Numbers, or Google Sheets to see the chart.
+- **[Live chart on Google Sheets](https://docs.google.com/spreadsheets/d/1fcVnr2D4TvZEHOT95skfsjcpe_AlilVbNe3SeTN2Cm0/edit)**
+  — a hosted view of the same data. A bound Apps Script pulls the CSV above from
+  the repo on a daily trigger and redraws the chart, so the sheet tracks the
+  history without a download.
 
 Both files are committed by the same auto-merged pull request as the Markdown
 report, so the history builds itself. The workbook's document properties are set
