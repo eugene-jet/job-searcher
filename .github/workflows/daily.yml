@@ -53,9 +53,27 @@ jobs:
           git add -A
           git commit -m "Daily report $(date -u +%Y-%m-%d)"
           git push origin "$BRANCH"
-          gh pr create --base main --head "$BRANCH" \
-            --title "Daily report $(date -u +'%Y-%m-%d %H:%M UTC')" \
-            --body "Automated Product Design / UI/UX vacancy report from DOU and Djinni."
+          # gh pr create occasionally hits a transient GitHub API error, such
+          # as an HTTP 502 from the GraphQL endpoint. Retry before giving up,
+          # and treat a PR already created by an earlier flaky attempt as
+          # success so the branch never strands without a pull request.
+          for i in 1 2 3 4 5; do
+            if gh pr create --base main --head "$BRANCH" \
+                --title "Daily report $(date -u +'%Y-%m-%d %H:%M UTC')" \
+                --body "Automated Product Design / UI/UX vacancy report from DOU and Djinni."; then
+              break
+            fi
+            if [ -n "$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')" ]; then
+              echo "Report PR already exists, continuing."
+              break
+            fi
+            if [ "$i" = 5 ]; then
+              echo "Could not create the report PR." >&2
+              exit 1
+            fi
+            echo "pr create failed (attempt $i), retrying..."
+            sleep 6
+          done
           for i in 1 2 3 4 5; do
             if gh pr merge "$BRANCH" --squash --delete-branch; then
               exit 0
