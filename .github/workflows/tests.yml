@@ -1,0 +1,28 @@
+name: Tests
+
+# Runs the offline unit test suite on every push and pull request. The tests
+# use in-memory fixtures and never touch the network, so they pass in the
+# sandboxed CI environment that cannot reach the job boards.
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -q

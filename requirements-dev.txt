@@ -1,0 +1,4 @@
+# Development and CI dependencies. The runtime needs only requirements.txt;
+# these add the test runner used by the suite in tests/.
+-r requirements.txt
+pytest>=8
