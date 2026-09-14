@@ -153,6 +153,23 @@ def test_parse_djinni_ld_non_remote_uses_country():
     assert v["location"] == "Ukraine"
 
 
+def test_parse_djinni_ld_location_requirements_as_list():
+    # schema.org permits a list of AdministrativeArea entries; the first one
+    # still yields a location rather than being dropped.
+    posting = {
+        "@type": "JobPosting",
+        "title": "UI/UX Designer",
+        "url": "https://djinni.co/jobs/888/",
+        "applicantLocationRequirements": [
+            {"address": {"addressCountry": "Poland"}},
+            {"address": {"addressCountry": "Ukraine"}},
+        ],
+        "datePosted": "2026-09-06T09:00:00",
+    }
+    v = scrapers._parse_djinni_ld(_djinni_html(posting))[0]
+    assert v["location"] == "Poland"
+
+
 def test_parse_djinni_ld_ignores_non_jobposting_and_bad_dates():
     good = {
         "@type": "JobPosting",
