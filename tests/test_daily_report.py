@@ -1,5 +1,7 @@
 """Unit tests for the report-rendering and Telegram-formatting helpers."""
 
+import urllib.error
+
 import daily_report as dr
 
 
@@ -148,3 +150,54 @@ def test_telegram_escapes_html_in_titles():
     assert "&lt;script&gt;" in body
     assert "Me &amp; You" in body
     assert "<script>" not in body
+
+
+# --- send_telegram ---------------------------------------------------------
+
+class _FakeResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self):
+        return b"{}"
+
+
+def _patch_urlopen(monkeypatch, behaviour):
+    """Record every request and drive urlopen from ``behaviour(index, request)``.
+
+    ``behaviour`` returns ``None`` to succeed or an exception instance to raise
+    for that call, letting a test simulate a single failing chunk.
+    """
+    calls = []
+
+    def fake_urlopen(request, timeout=None):
+        exc = behaviour(len(calls), request)
+        calls.append(request)
+        if exc is not None:
+            raise exc
+        return _FakeResponse()
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    return calls
+
+
+def test_send_telegram_all_succeed(monkeypatch):
+    calls = _patch_urlopen(monkeypatch, lambda i, req: None)
+    ok = dr.send_telegram("token", "chat", ["a", "b", "c"])
+    assert ok is True
+    assert len(calls) == 3
+
+
+def test_send_telegram_continues_after_a_failing_chunk(monkeypatch):
+    # The second chunk fails; the third must still be attempted, and the overall
+    # result reports the failure.
+    def behaviour(i, req):
+        return urllib.error.URLError("boom") if i == 1 else None
+
+    calls = _patch_urlopen(monkeypatch, behaviour)
+    ok = dr.send_telegram("token", "chat", ["a", "b", "c"])
+    assert ok is False
+    assert len(calls) == 3
