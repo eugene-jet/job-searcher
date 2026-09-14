@@ -95,9 +95,23 @@ python3 daily_report.py
 
 This writes `reports/report-YYYY-MM-DD.md`, updates
 `data/vacancy_counts.csv` and `reports/vacancy-analytics.xlsx`, and prints a
-one-line summary to stdout. Telegram delivery is skipped locally — it only sends
+short summary to stdout. Telegram delivery is skipped locally — it only sends
 when the `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` environment variables are
 set.
+
+## Running the tests
+
+The parsing, report-rendering and analytics helpers are covered by an offline
+unit-test suite in [`tests/`](tests/). The tests run against in-memory fixtures
+and never touch the network, so they are fast and reproducible:
+
+```bash
+pip install -r requirements-dev.txt
+python3 -m pytest
+```
+
+The same suite runs in CI on every push and pull request
+([`.github/workflows/tests.yml`](.github/workflows/tests.yml)).
 
 ## How it works
 
