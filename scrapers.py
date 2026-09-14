@@ -259,6 +259,12 @@ def _parse_djinni_ld(html):
             org = j.get("hiringOrganization") or {}
             loc = ""
             req = j.get("applicantLocationRequirements") or {}
+            # schema.org allows either a single AdministrativeArea or a list of
+            # them. Take the first entry when it is a list so a posting that
+            # names several countries still yields a location instead of an
+            # empty string.
+            if isinstance(req, list):
+                req = req[0] if req else {}
             if isinstance(req, dict):
                 addr = req.get("address") or {}
                 loc = addr.get("addressCountry", "") if isinstance(addr, dict) else ""
