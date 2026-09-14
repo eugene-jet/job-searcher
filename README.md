@@ -72,10 +72,9 @@ Djinni's Product Design + UI/UX tag listing) — and keeps a running time series
   truth — one row per calendar day with the columns `date`, `dou`, `djinni`. A
   second run on the same day overwrites that day's numbers with the latest; a
   source that failed to scrape is left blank (a gap), not recorded as `0`.
-- **[`reports/vacancy-analytics.xlsx`](reports/vacancy-analytics.xlsx)** is
-  regenerated from the CSV on each run. Its `Counts` sheet holds the same table
-  plus a line chart of the DOU and Djinni counts over time. Open it in Excel,
-  Numbers, or Google Sheets to see the chart.
+- **[Git activity — the repository's commit graph](https://github.com/eugene-jet/job-searcher/graphs/commit-activity)**
+  shows how the history builds up over time as each run lands its report and
+  updated counts.
 - **[Live chart on Google Sheets](https://docs.google.com/spreadsheets/d/1fcVnr2D4TvZEHOT95skfsjcpe_AlilVbNe3SeTN2Cm0/edit)**
   — a hosted view of the same data. A bound Apps Script pulls the CSV above from
   the repo on a daily trigger and redraws the chart, so the sheet tracks the
