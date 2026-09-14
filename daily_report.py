@@ -197,7 +197,14 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals
 
 
 def send_telegram(token, chat_id, messages):
-    """Send each message via the Telegram Bot API. Best-effort; logs failures."""
+    """Send each message via the Telegram Bot API. Best-effort; logs failures.
+
+    A long digest is split into several messages. One failing chunk should not
+    strand the ones after it, so a failure is logged and the remaining chunks
+    are still attempted; the return value is ``True`` only when every chunk was
+    delivered.
+    """
+    ok = True
     for msg in messages:
         data = urllib.parse.urlencode(
             {
@@ -215,8 +222,8 @@ def send_telegram(token, chat_id, messages):
                 resp.read()
         except Exception as exc:  # noqa: BLE001 - notification must not break the run
             sys.stderr.write("Telegram send failed: %s\n" % exc)
-            return False
-    return True
+            ok = False
+    return ok
 
 
 def main():
