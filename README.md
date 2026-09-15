@@ -2,7 +2,8 @@
 
 **A twice-daily Telegram digest of fresh Product Design and UI/UX jobs — scraped
 from [DOU](https://jobs.dou.ua/vacancies/?category=Design) and
-[Djinni](https://djinni.co/jobs/?primary_keyword=Design), delivered on time.**
+[Djinni](https://djinni.co/jobs/?search_type=basic-search&primary_keyword=Product%20Design&primary_keyword=UI%20UX),
+delivered on time.**
 
 job-searcher watches two Ukrainian job boards, keeps only the Product Design /
 UI/UX vacancies posted in the last three days, and pushes a tidy, grouped digest
