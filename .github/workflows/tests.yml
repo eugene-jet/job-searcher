@@ -7,7 +7,16 @@ name: Tests
 on:
   push:
     branches: [main]
-  pull_request: {}
+  # The daily report opens a pull request that only touches generated artifacts
+  # (reports/ and data/) and squash-merges it within seconds, deleting the head
+  # branch. That deletion races the pull_request-triggered test run: the branch
+  # is often gone before a runner starts, so the run ends in a startup failure
+  # with no jobs. Those PRs carry no code to test, so skip them by ignoring the
+  # paths they change; runs still fire for any pull request that touches code.
+  pull_request:
+    paths-ignore:
+      - 'reports/**'
+      - 'data/**'
 
 jobs:
   pytest:
