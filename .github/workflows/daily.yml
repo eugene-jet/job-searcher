@@ -36,6 +36,11 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Optional: when set, the report also sends to everyone who subscribed
+          # to the bot with /start and retires chats that blocked it. See
+          # trigger/README.md. Both are unset until the subscription bot is live.
+          SUBSCRIBERS_URL: ${{ secrets.SUBSCRIBERS_URL }}
+          DEACTIVATE_URL: ${{ secrets.DEACTIVATE_URL }}
         run: python3 daily_report.py
 
       - name: Open and merge report PR

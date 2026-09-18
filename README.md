@@ -156,7 +156,16 @@ Claude Code cloud sandbox blocks those connections by egress policy.
 
 Telegram delivery is enabled by two repository secrets, `TELEGRAM_BOT_TOKEN` and
 `TELEGRAM_CHAT_ID`; without them the script just writes the report and skips the
-notification.
+notification. `TELEGRAM_CHAT_ID` may list several comma-separated destinations
+(for example a personal DM alongside a channel).
+
+Optionally the digest can run as a subscription bot: people press `/start` and
+each receives the report in their own DM. Subscribers are stored by the
+Cloudflare Worker in [`trigger/`](trigger/), and the report reads the active
+list (via the `SUBSCRIBERS_URL` secret) on top of any static `TELEGRAM_CHAT_ID`,
+retiring anyone who blocked the bot (via `DEACTIVATE_URL`). This is what makes
+the user count meaningful — see [`trigger/README.md`](trigger/README.md) for the
+setup and the `/stats` endpoint that reports how many people use the bot.
 
 Trigger a run by hand any time from the Actions tab (**Run workflow**) or with:
 

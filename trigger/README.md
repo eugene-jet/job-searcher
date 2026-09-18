@@ -5,12 +5,21 @@ of minutes — sometimes hours — late, and under load the run is dropped
 altogether. That is why the daily report has been arriving at random times or
 not at all.
 
-This directory holds a tiny Cloudflare Worker that replaces GitHub as the clock.
-Cloudflare cron triggers fire within about a minute of the scheduled time. On
-each tick the Worker calls the GitHub REST API to dispatch the existing
-`daily.yml` workflow (the same effect as pressing **Run workflow** in the
-Actions tab). The scraping and Telegram delivery still run inside GitHub
-Actions; only the *trigger* moves out.
+This directory holds a small Cloudflare Worker with two jobs.
+
+**As the clock**, it replaces GitHub as the scheduler. Cloudflare cron triggers
+fire within about a minute of the scheduled time. On each tick the Worker calls
+the GitHub REST API to dispatch the existing `daily.yml` workflow (the same
+effect as pressing **Run workflow** in the Actions tab). The scraping and
+Telegram delivery still run inside GitHub Actions; only the *trigger* moves out.
+
+**As the bot's back end**, it keeps the list of people who subscribed to the
+digest. Telegram sends every `/start` and `/stop` to the Worker's webhook, which
+records the chat in a KV namespace; the daily report reads the active list and
+reports back anyone who blocked the bot. This is optional — without it the
+report still goes to whatever `TELEGRAM_CHAT_ID` lists — and it is what makes
+the subscriber count meaningful. Chat ids are personal data and live only in KV,
+never in this repository. See [Subscription bot](#subscription-bot) below.
 
 ## One-time setup
 
@@ -53,6 +62,79 @@ curl "https://job-searcher-trigger.<your-subdomain>.workers.dev/?key=<TRIGGER_SE
 
 A `dispatched` response means the workflow was started; check the Actions tab
 and Telegram. (If you did not set `TRIGGER_SECRET`, drop the `?key=` part.)
+
+## Subscription bot
+
+This turns the one-way digest into a bot people can subscribe to. Skip it if you
+only push to a fixed chat or channel.
+
+### One-time setup
+
+1. **Create the KV namespace** that stores the subscriber list, then paste the
+   id it prints into `wrangler.toml` under the `SUBSCRIBERS` binding:
+
+   ```bash
+   cd trigger
+   wrangler kv namespace create SUBSCRIBERS
+   ```
+
+2. **Store the bot secrets** (in addition to `GH_TOKEN` from the cron setup):
+
+   ```bash
+   wrangler secret put TELEGRAM_BOT_TOKEN  # the @BotFather token
+   wrangler secret put WEBHOOK_SECRET      # any long random string
+   wrangler secret put API_KEY             # any long random string
+   ```
+
+   `WEBHOOK_SECRET` proves an incoming update really came from Telegram; `API_KEY`
+   guards the JSON endpoints the report calls.
+
+3. **Deploy** so the new routes and binding go live:
+
+   ```bash
+   wrangler deploy
+   ```
+
+4. **Point Telegram at the webhook.** Tell Telegram to deliver updates to the
+   Worker, using the same `WEBHOOK_SECRET` both in the URL path and as the
+   `secret_token`:
+
+   ```bash
+   curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
+     -d "url=https://job-searcher-trigger.<your-subdomain>.workers.dev/telegram/<WEBHOOK_SECRET>" \
+     -d "secret_token=<WEBHOOK_SECRET>"
+   ```
+
+   Open a chat with the bot and send `/start`; it should reply and appear in the
+   list (step below).
+
+5. **Let the report read the list.** Add two repository secrets in GitHub →
+   Settings → Secrets and variables → Actions, each the endpoint URL with the
+   `API_KEY` baked in, and wire them into the workflow env:
+
+   - `SUBSCRIBERS_URL` → `https://…workers.dev/subscribers?key=<API_KEY>`
+   - `DEACTIVATE_URL` → `https://…workers.dev/deactivate?key=<API_KEY>`
+
+   With `SUBSCRIBERS_URL` set, the report sends to every active subscriber (plus
+   any static `TELEGRAM_CHAT_ID`); with `DEACTIVATE_URL` set, chats that blocked
+   the bot are retired automatically.
+
+### Endpoints
+
+All JSON endpoints require `?key=<API_KEY>`.
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/telegram/<WEBHOOK_SECRET>` | POST | Telegram webhook: handles `/start` and `/stop`. |
+| `/subscribers` | GET | Active subscriber chat ids: `{"subscribers": [...]}`. |
+| `/deactivate` | POST | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
+| `/stats` | GET | Counts: `{"total", "active", "blocked", "stopped"}`. |
+
+Check how many people use the bot at any time:
+
+```bash
+curl "https://job-searcher-trigger.<your-subdomain>.workers.dev/stats?key=<API_KEY>"
+```
 
 ## The Worker is the only scheduler
 

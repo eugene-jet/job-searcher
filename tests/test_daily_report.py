@@ -1,5 +1,6 @@
 """Unit tests for the report-rendering and Telegram-formatting helpers."""
 
+import json
 import urllib.error
 
 import daily_report as dr
@@ -201,3 +202,136 @@ def test_send_telegram_continues_after_a_failing_chunk(monkeypatch):
     ok = dr.send_telegram("token", "chat", ["a", "b", "c"])
     assert ok is False
     assert len(calls) == 3
+
+
+# --- _deliver classification -----------------------------------------------
+
+def test_deliver_ok_when_every_chunk_arrives(monkeypatch):
+    calls = _patch_urlopen(monkeypatch, lambda i, req: None)
+    assert dr._deliver("token", "chat", ["a", "b"]) == "ok"
+    assert len(calls) == 2
+
+
+def test_deliver_blocked_on_403_and_stops(monkeypatch):
+    # A 403 means the user blocked the bot: the recipient is retired and the
+    # remaining chunks are not attempted.
+    def behaviour(i, req):
+        return urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
+
+    calls = _patch_urlopen(monkeypatch, behaviour)
+    assert dr._deliver("token", "chat", ["a", "b", "c"]) == "blocked"
+    assert len(calls) == 1
+
+
+def test_deliver_blocked_on_400(monkeypatch):
+    def behaviour(i, req):
+        return urllib.error.HTTPError("u", 400, "Bad Request", {}, None)
+
+    _patch_urlopen(monkeypatch, behaviour)
+    assert dr._deliver("token", "chat", ["a"]) == "blocked"
+
+
+def test_deliver_error_continues_and_keeps_recipient(monkeypatch):
+    # A transient failure on one chunk is reported as "error" (not "blocked"),
+    # and the later chunks are still attempted.
+    def behaviour(i, req):
+        return urllib.error.URLError("boom") if i == 1 else None
+
+    calls = _patch_urlopen(monkeypatch, behaviour)
+    assert dr._deliver("token", "chat", ["a", "b", "c"]) == "error"
+    assert len(calls) == 3
+
+
+# --- subscriber list -------------------------------------------------------
+
+class _JsonResponse:
+    """Context-manager stand-in for urlopen that returns a fixed JSON payload."""
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self):
+        return json.dumps(self._payload).encode()
+
+
+def test_fetch_subscribers_empty_when_url_unset(monkeypatch):
+    monkeypatch.delenv("SUBSCRIBERS_URL", raising=False)
+    assert dr.fetch_subscribers() == []
+
+
+def test_fetch_subscribers_parses_bare_list(monkeypatch):
+    monkeypatch.setenv("SUBSCRIBERS_URL", "https://worker/subscribers?key=k")
+    monkeypatch.setattr(dr.urllib.request, "urlopen", lambda *a, **k: _JsonResponse([1, 2, "3"]))
+    assert dr.fetch_subscribers() == ["1", "2", "3"]
+
+
+def test_fetch_subscribers_parses_wrapped_object(monkeypatch):
+    monkeypatch.setenv("SUBSCRIBERS_URL", "https://worker/subscribers")
+    monkeypatch.setattr(
+        dr.urllib.request, "urlopen", lambda *a, **k: _JsonResponse({"subscribers": [10, 20]})
+    )
+    assert dr.fetch_subscribers() == ["10", "20"]
+
+
+def test_fetch_subscribers_empty_on_failure(monkeypatch):
+    monkeypatch.setenv("SUBSCRIBERS_URL", "https://worker/subscribers")
+
+    def boom(*a, **k):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", boom)
+    assert dr.fetch_subscribers() == []
+
+
+# --- collect_recipients ----------------------------------------------------
+
+def test_collect_recipients_merges_and_dedups(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", " 10 , 20 ")
+    monkeypatch.setattr(dr, "fetch_subscribers", lambda: ["20", "30"])
+    # Static ids first, subscriber ids appended, the shared "20" listed once.
+    assert dr.collect_recipients() == ["10", "20", "30"]
+
+
+def test_collect_recipients_subscribers_only(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.setattr(dr, "fetch_subscribers", lambda: ["7", "8"])
+    assert dr.collect_recipients() == ["7", "8"]
+
+
+# --- deactivate_subscribers ------------------------------------------------
+
+def test_deactivate_posts_ids(monkeypatch):
+    monkeypatch.setenv("DEACTIVATE_URL", "https://worker/deactivate?key=k")
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        captured["data"] = request.data
+        return _FakeResponse()
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    dr.deactivate_subscribers(["1", "2"])
+    assert captured["url"].startswith("https://worker/deactivate")
+    assert json.loads(captured["data"]) == {"chat_ids": ["1", "2"]}
+
+
+def test_deactivate_noop_when_url_unset(monkeypatch):
+    monkeypatch.delenv("DEACTIVATE_URL", raising=False)
+    called = []
+    monkeypatch.setattr(dr.urllib.request, "urlopen", lambda *a, **k: called.append(1))
+    dr.deactivate_subscribers(["1"])
+    assert called == []
+
+
+def test_deactivate_noop_when_no_ids(monkeypatch):
+    monkeypatch.setenv("DEACTIVATE_URL", "https://worker/deactivate")
+    called = []
+    monkeypatch.setattr(dr.urllib.request, "urlopen", lambda *a, **k: called.append(1))
+    dr.deactivate_subscribers([])
+    assert called == []
