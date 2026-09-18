@@ -13,6 +13,9 @@ browsable history. There are no servers to run and nothing to `pip install`: the
 scraping runs on GitHub Actions, and the punctual twice-a-day schedule is driven
 by a small Cloudflare Worker.
 
+**Subscribe:** open [@JobsbroBot](https://t.me/JobsbroBot) in Telegram and press
+*Start* to receive the digest in your own direct messages.
+
 ## Sample output
 
 Each run posts a message like this to Telegram — the same content is saved as a
@@ -159,8 +162,9 @@ Telegram delivery is enabled by two repository secrets, `TELEGRAM_BOT_TOKEN` and
 notification. `TELEGRAM_CHAT_ID` may list several comma-separated destinations
 (for example a personal DM alongside a channel).
 
-Optionally the digest can run as a subscription bot: people press `/start` and
-each receives the report in their own DM. Subscribers are stored by the
+Optionally the digest can run as a subscription bot: people open
+[@JobsbroBot](https://t.me/JobsbroBot) and press `/start`, and each receives the
+report in their own DM. Subscribers are stored by the
 Cloudflare Worker in [`trigger/`](trigger/), and the report reads the active
 list (via the `SUBSCRIBERS_URL` secret) on top of any static `TELEGRAM_CHAT_ID`,
 retiring anyone who blocked the bot (via `DEACTIVATE_URL`). This is what makes
