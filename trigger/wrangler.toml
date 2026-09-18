@@ -8,3 +8,10 @@ compatibility_date = "2025-01-01"
 # as it did before — the only thing that changes is punctuality.
 [triggers]
 crons = ["0 9 * * *", "0 18 * * *"]
+
+# Holds the bot's subscriber list (one `sub:<chat_id>` record each). Create the
+# namespace once with `wrangler kv namespace create SUBSCRIBERS` and paste the
+# id it prints below. Chat ids are personal data and live only here.
+[[kv_namespaces]]
+binding = "SUBSCRIBERS"
+id = "PASTE_KV_NAMESPACE_ID"
