@@ -313,11 +313,16 @@ def main():
 
     # Deliver to Telegram as inline messages when configured (skipped locally).
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if token and chat_id:
+    chat_ids = os.environ.get("TELEGRAM_CHAT_ID")
+    if token and chat_ids:
         messages = build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals)
-        ok = send_telegram(token, chat_id, messages)
-        print("Telegram: sent %d message(s), ok=%s" % (len(messages), ok))
+        # TELEGRAM_CHAT_ID may list several destinations separated by commas, for
+        # example a personal DM alongside a public channel. Deliver the same
+        # digest to each; a single id keeps working unchanged.
+        recipients = [c.strip() for c in chat_ids.split(",") if c.strip()]
+        for chat_id in recipients:
+            ok = send_telegram(token, chat_id, messages)
+            print("Telegram: sent %d message(s) to %s, ok=%s" % (len(messages), chat_id, ok))
 
     return 0
 
