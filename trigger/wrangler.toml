@@ -14,4 +14,4 @@ crons = ["0 9 * * *", "0 18 * * *"]
 # id it prints below. Chat ids are personal data and live only here.
 [[kv_namespaces]]
 binding = "SUBSCRIBERS"
-id = "PASTE_KV_NAMESPACE_ID"
+id = "3ee1d84667564f94a3a31d4eee53807e"
