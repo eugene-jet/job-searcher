@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
@@ -196,15 +197,22 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals
     return messages
 
 
-def send_telegram(token, chat_id, messages):
-    """Send each message via the Telegram Bot API. Best-effort; logs failures.
+def _deliver(token, chat_id, messages):
+    """Send every chunk of one digest to a single chat via the Bot API.
 
     A long digest is split into several messages. One failing chunk should not
-    strand the ones after it, so a failure is logged and the remaining chunks
-    are still attempted; the return value is ``True`` only when every chunk was
-    delivered.
+    strand the ones after it, so a plain failure is logged and the remaining
+    chunks are still attempted. The return value classifies the recipient:
+
+    * ``"ok"`` — every chunk was delivered.
+    * ``"blocked"`` — the recipient is gone for good (the user blocked the bot,
+      or the chat no longer exists), reported by Telegram as HTTP 403 or a 400
+      "chat not found". There is no point sending the rest, so delivery stops
+      and the caller can retire the recipient.
+    * ``"error"`` — at least one chunk failed for some other, likely transient
+      reason; the recipient is kept for the next run.
     """
-    ok = True
+    status = "ok"
     for msg in messages:
         data = urllib.parse.urlencode(
             {
@@ -220,10 +228,100 @@ def send_telegram(token, chat_id, messages):
                 urllib.request.Request(url, data=data), timeout=30
             ) as resp:
                 resp.read()
+        except urllib.error.HTTPError as exc:
+            # 403 = the user blocked the bot; 400 = a malformed request, which in
+            # practice here means "chat not found" for a chat that was deleted.
+            # Either way this recipient is unreachable and should be retired.
+            if exc.code in (400, 403):
+                sys.stderr.write(
+                    "Telegram %d for %s: %s\n" % (exc.code, chat_id, exc)
+                )
+                return "blocked"
+            sys.stderr.write("Telegram send failed for %s: %s\n" % (chat_id, exc))
+            status = "error"
         except Exception as exc:  # noqa: BLE001 - notification must not break the run
-            sys.stderr.write("Telegram send failed: %s\n" % exc)
-            ok = False
-    return ok
+            sys.stderr.write("Telegram send failed for %s: %s\n" % (chat_id, exc))
+            status = "error"
+    return status
+
+
+def send_telegram(token, chat_id, messages):
+    """Send a digest to one chat, returning ``True`` only when it fully arrived.
+
+    Thin wrapper over :func:`_deliver` kept for callers that only need the
+    success flag.
+    """
+    return _deliver(token, chat_id, messages) == "ok"
+
+
+def fetch_subscribers():
+    """Return the active subscriber chat ids from the bot's ``/start`` list.
+
+    The list lives outside this repository (chat ids are personal data and must
+    never be committed) and is served by the Cloudflare Worker in ``trigger/``.
+    ``SUBSCRIBERS_URL`` points at that endpoint with its auth key already baked
+    in, for example ``https://worker.example/subscribers?key=...``. Best-effort:
+    any failure logs and yields an empty list, so a Worker outage never blocks
+    the digest to the static recipients.
+
+    Accepts either a bare JSON array of ids or ``{"subscribers": [...]}``.
+    """
+    url = os.environ.get("SUBSCRIBERS_URL")
+    if not url:
+        return []
+    try:
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            payload = json.loads(resp.read().decode())
+    except Exception as exc:  # noqa: BLE001 - delivery must not break the run
+        sys.stderr.write("Subscriber fetch failed: %s\n" % exc)
+        return []
+    if isinstance(payload, dict):
+        payload = payload.get("subscribers", [])
+    return [str(x).strip() for x in payload if str(x).strip()]
+
+
+def collect_recipients():
+    """Merge the static ``TELEGRAM_CHAT_ID`` list with the dynamic subscriber
+    list, de-duplicated and preserving order (static ids first).
+
+    ``TELEGRAM_CHAT_ID`` may hold several comma-separated ids — typically the
+    owner's own DM or a channel — and always receive the digest. Subscribers who
+    pressed ``/start`` are appended. The owner appearing in both lists is sent to
+    only once.
+    """
+    recipients = []
+    seen = set()
+    static = os.environ.get("TELEGRAM_CHAT_ID", "")
+    for chat_id in (c.strip() for c in static.split(",")):
+        if chat_id and chat_id not in seen:
+            seen.add(chat_id)
+            recipients.append(chat_id)
+    for chat_id in fetch_subscribers():
+        if chat_id not in seen:
+            seen.add(chat_id)
+            recipients.append(chat_id)
+    return recipients
+
+
+def deactivate_subscribers(chat_ids):
+    """Ask the Worker to retire recipients that blocked the bot or vanished.
+
+    Posts the ids to ``DEACTIVATE_URL`` (with its auth key baked in) so they are
+    marked inactive and dropped from future runs. Best-effort: a failure is
+    logged and ignored — the worst case is retrying a dead id next run.
+    """
+    url = os.environ.get("DEACTIVATE_URL")
+    if not url or not chat_ids:
+        return
+    data = json.dumps({"chat_ids": list(chat_ids)}).encode()
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            resp.read()
+    except Exception as exc:  # noqa: BLE001 - delivery must not break the run
+        sys.stderr.write("Subscriber deactivate failed: %s\n" % exc)
 
 
 def main():
@@ -312,17 +410,29 @@ def main():
     )
 
     # Deliver to Telegram as inline messages when configured (skipped locally).
+    # Recipients are the static TELEGRAM_CHAT_ID list plus everyone who
+    # subscribed to the bot with /start (fetched from the Worker); see
+    # collect_recipients. Delivery is skipped locally, where no token is set.
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_ids = os.environ.get("TELEGRAM_CHAT_ID")
-    if token and chat_ids:
-        messages = build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals)
-        # TELEGRAM_CHAT_ID may list several destinations separated by commas, for
-        # example a personal DM alongside a public channel. Deliver the same
-        # digest to each; a single id keeps working unchanged.
-        recipients = [c.strip() for c in chat_ids.split(",") if c.strip()]
-        for chat_id in recipients:
-            ok = send_telegram(token, chat_id, messages)
-            print("Telegram: sent %d message(s) to %s, ok=%s" % (len(messages), chat_id, ok))
+    if token:
+        recipients = collect_recipients()
+        if recipients:
+            messages = build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals)
+            sent = 0
+            blocked = []
+            for chat_id in recipients:
+                status = _deliver(token, chat_id, messages)
+                if status == "ok":
+                    sent += 1
+                elif status == "blocked":
+                    blocked.append(chat_id)
+                print("Telegram: %s -> %s (%d message(s))" % (status, chat_id, len(messages)))
+            # Retire recipients who blocked the bot so they are not retried.
+            deactivate_subscribers(blocked)
+            print(
+                "Telegram: delivered to %d/%d recipients, %d blocked"
+                % (sent, len(recipients), len(blocked))
+            )
 
     return 0
 
