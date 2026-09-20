@@ -210,16 +210,10 @@ async function history(env) {
   return { history: points, current };
 }
 
-// Retire the chats the daily report could not reach (they blocked the bot or
-// the chat was deleted).
-async function handleDeactivate(request, env) {
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return new Response("bad request\n", { status: 400 });
-  }
-  const ids = (body && body.chat_ids) || [];
+// Mark chats inactive+blocked so they drop out of future sends. Shared by the
+// daily report's /deactivate callback and the broadcast's own retiring of chats
+// that blocked the bot.
+async function deactivateIds(env, ids) {
   const now = new Date().toISOString();
   for (const id of ids) {
     const key = `sub:${String(id)}`;
@@ -231,7 +225,75 @@ async function handleDeactivate(request, env) {
       await env.SUBSCRIBERS.put(key, JSON.stringify(record));
     }
   }
-  return json({ deactivated: ids.length });
+  return ids.length;
+}
+
+// Retire the chats the daily report could not reach (they blocked the bot or
+// the chat was deleted).
+async function handleDeactivate(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response("bad request\n", { status: 400 });
+  }
+  const ids = (body && body.chat_ids) || [];
+  const deactivated = await deactivateIds(env, ids);
+  return json({ deactivated });
+}
+
+// Send one message to one chat, classifying the outcome like the daily report
+// does: "ok", "blocked" (403/400 — user blocked the bot or the chat is gone),
+// or "error" (some other, likely transient failure).
+async function sendTo(env, chatId, text) {
+  const res = await fetch(
+    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        disable_web_page_preview: true,
+      }),
+    },
+  );
+  if (res.ok) return "ok";
+  if (res.status === 403 || res.status === 400) return "blocked";
+  return "error";
+}
+
+// Send a one-off message to every active subscriber. Retires chats that blocked
+// the bot, so it doubles as a liveness check. Small lists only: Telegram caps
+// broadcasts near 30 messages/second, which this does not throttle for.
+async function handleBroadcast(request, env) {
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    return json({ error: "TELEGRAM_BOT_TOKEN not set" }, 500);
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response("bad request\n", { status: 400 });
+  }
+  const text = body && typeof body.text === "string" ? body.text.trim() : "";
+  if (!text) return json({ error: "text required" }, 400);
+
+  const ids = [];
+  await eachSubscriber(env, (record) => {
+    if (record.active) ids.push(record.id);
+  });
+
+  let sent = 0;
+  const blocked = [];
+  for (const id of ids) {
+    const status = await sendTo(env, id, text);
+    if (status === "ok") sent += 1;
+    else if (status === "blocked") blocked.push(id);
+  }
+  await deactivateIds(env, blocked);
+
+  return json({ recipients: ids.length, sent, blocked: blocked.length });
 }
 
 // Public dashboard page. Reads /history (aggregate counts only, no chat ids)
@@ -365,6 +427,11 @@ export default {
       if (!authorized(url, env)) return new Response("forbidden\n", { status: 403 });
       if (request.method !== "POST") return new Response("method not allowed\n", { status: 405 });
       return handleDeactivate(request, env);
+    }
+    if (path === "/broadcast") {
+      if (!authorized(url, env)) return new Response("forbidden\n", { status: 403 });
+      if (request.method !== "POST") return new Response("method not allowed\n", { status: 405 });
+      return handleBroadcast(request, env);
     }
 
     // Public, key-free: aggregate counts only (no chat ids), for the dashboard.
