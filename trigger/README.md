@@ -167,9 +167,16 @@ curl -X POST "https://job-searcher-trigger.<your-subdomain>.workers.dev/broadcas
 
 It returns `{"recipients", "sent", "blocked"}` — how many were targeted, how many
 received it, and how many had blocked the bot (those are retired automatically,
-so the count self-heals). The text is sent as-is (no Markdown/HTML parsing). Keep
-it to small lists: Telegram caps broadcasts near 30 messages per second, which
-this endpoint does not throttle for.
+so the count self-heals). The text is sent as-is (no Markdown/HTML parsing).
+
+`/broadcast` is rate limited to 3 calls per 5 minutes (returns `429` when
+exceeded), since each call fans out real Telegram messages. The per-recipient
+send itself is not throttled, so keep the audience modest — Telegram caps
+broadcasts near 30 messages per second.
+
+The public `/history` and `/dashboard` responses are served from Cloudflare's
+edge cache (30s and 300s respectively), so hammering them does not re-run the KV
+work on every request. Counts on the dashboard can therefore lag by up to 30s.
 
 ### Dashboard
 

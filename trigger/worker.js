@@ -418,6 +418,31 @@ load();
 </body>
 </html>`;
 
+// Approximate fixed-window rate limit backed by KV. KV is eventually
+// consistent, so the cap is soft — good enough to blunt abuse without a Durable
+// Object. Returns true when the caller should be rejected. Uses the SUBSCRIBERS
+// namespace with an rl: prefix, which does not collide with sub:/stat: keys.
+async function rateLimited(env, bucket, limit, windowSec) {
+  const slot = Math.floor(Date.now() / 1000 / windowSec);
+  const key = `rl:${bucket}:${slot}`;
+  const count = parseInt((await env.SUBSCRIBERS.get(key)) || "0", 10) + 1;
+  await env.SUBSCRIBERS.put(key, String(count), { expirationTtl: windowSec * 2 });
+  return count > limit;
+}
+
+// Serve a response from Cloudflare's edge cache when possible, so repeated hits
+// on the public endpoints do not re-run KV work every time. On a miss it
+// produces the response, caches it for `ttl` seconds, and returns it.
+async function cachedResponse(request, ctx, ttl, produce) {
+  const cache = caches.default;
+  const hit = await cache.match(request);
+  if (hit) return hit;
+  const res = await produce();
+  res.headers.set("Cache-Control", `public, max-age=${ttl}`);
+  ctx.waitUntil(cache.put(request, res.clone()));
+  return res;
+}
+
 export default {
   // Fired by the crons declared in wrangler.toml. A successful dispatch returns
   // HTTP 204 with an empty body. It also records the day's subscriber snapshot.
@@ -426,7 +451,7 @@ export default {
     ctx.waitUntil(recordSnapshot(env));
   },
 
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -454,17 +479,29 @@ export default {
     if (path === "/broadcast") {
       if (!authorizedAdmin(request, url, env)) return new Response("forbidden\n", { status: 403 });
       if (request.method !== "POST") return new Response("method not allowed\n", { status: 405 });
+      // A broadcast fans out real Telegram messages, so cap it hard: even with
+      // the admin key, no more than 3 per 5 minutes.
+      if (await rateLimited(env, "broadcast", 3, 300)) {
+        return new Response("rate limited\n", { status: 429 });
+      }
       return handleBroadcast(request, env);
     }
 
     // Public, key-free: aggregate counts only (no chat ids), for the dashboard.
+    // Served from the edge cache so hammering them does not re-run KV work.
     if (path === "/history") {
-      return json(await history(env));
+      return cachedResponse(request, ctx, 30, async () => json(await history(env)));
     }
     if (path === "/dashboard") {
-      return new Response(DASHBOARD_HTML, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
+      return cachedResponse(
+        request,
+        ctx,
+        300,
+        () =>
+          new Response(DASHBOARD_HTML, {
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          }),
+      );
     }
 
     // Anything else is the manual dispatch trigger, guarded by TRIGGER_SECRET
