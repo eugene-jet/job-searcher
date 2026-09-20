@@ -121,20 +121,32 @@ only push to a fixed chat or channel.
 
 ### Endpoints
 
-All JSON endpoints require `?key=<API_KEY>`.
+The routes marked **key** require `?key=<API_KEY>` because they expose chat ids
+or mutate state. The **public** routes return only aggregate counts (no personal
+data), so the dashboard link can be shared freely.
 
-| Route | Method | Purpose |
-| --- | --- | --- |
-| `/telegram/<WEBHOOK_SECRET>` | POST | Telegram webhook: handles `/start` and `/stop`. |
-| `/subscribers` | GET | Active subscriber chat ids: `{"subscribers": [...]}`. |
-| `/deactivate` | POST | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
-| `/stats` | GET | Counts: `{"total", "active", "blocked", "stopped"}`. |
+| Route | Method | Access | Purpose |
+| --- | --- | --- | --- |
+| `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start` and `/stop`. |
+| `/subscribers` | GET | key | Active subscriber chat ids: `{"subscribers": [...]}`. |
+| `/deactivate` | POST | key | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
+| `/stats` | GET | key | Counts: `{"total", "active", "blocked", "stopped"}`. |
+| `/history` | GET | public | Daily count snapshots + live current, for the dashboard. |
+| `/dashboard` | GET | public | HTML page charting subscribers over time. |
 
 Check how many people use the bot at any time:
 
 ```bash
 curl "https://job-searcher-trigger.<your-subdomain>.workers.dev/stats?key=<API_KEY>"
 ```
+
+### Dashboard
+
+A shareable page charting active/total subscribers over time lives at
+[`/dashboard`](https://job-searcher-trigger.evnikmoroz.workers.dev/dashboard). It
+reads `/history`, which the Worker fills with one aggregate snapshot per day on
+each cron tick, so the chart accrues history from the first run after deploy. No
+key is needed and no chat ids are exposed — only counts.
 
 ## The Worker is the only scheduler
 

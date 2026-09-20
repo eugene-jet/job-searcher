@@ -171,6 +171,10 @@ retiring anyone who blocked the bot (via `DEACTIVATE_URL`). This is what makes
 the user count meaningful — see [`trigger/README.md`](trigger/README.md) for the
 setup and the `/stats` endpoint that reports how many people use the bot.
 
+A shareable **[dashboard](https://job-searcher-trigger.evnikmoroz.workers.dev/dashboard)**
+charts active and total subscribers over time. It shows only aggregate counts
+(no chat ids), so the link is safe to share.
+
 Trigger a run by hand any time from the Actions tab (**Run workflow**) or with:
 
 ```bash
