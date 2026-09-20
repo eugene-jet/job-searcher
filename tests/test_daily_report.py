@@ -271,6 +271,21 @@ def test_fetch_subscribers_parses_bare_list(monkeypatch):
     assert dr.fetch_subscribers() == ["1", "2", "3"]
 
 
+def test_fetch_subscribers_sets_user_agent(monkeypatch):
+    # Cloudflare 403s the default urllib User-Agent, so the request must carry an
+    # explicit one.
+    monkeypatch.setenv("SUBSCRIBERS_URL", "https://worker/subscribers?key=k")
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["ua"] = request.get_header("User-agent")
+        return _JsonResponse([1])
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    dr.fetch_subscribers()
+    assert captured["ua"] == dr.WORKER_USER_AGENT
+
+
 def test_fetch_subscribers_parses_wrapped_object(monkeypatch):
     monkeypatch.setenv("SUBSCRIBERS_URL", "https://worker/subscribers")
     monkeypatch.setattr(
@@ -313,12 +328,14 @@ def test_deactivate_posts_ids(monkeypatch):
     def fake_urlopen(request, timeout=None):
         captured["url"] = request.full_url
         captured["data"] = request.data
+        captured["ua"] = request.get_header("User-agent")
         return _FakeResponse()
 
     monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
     dr.deactivate_subscribers(["1", "2"])
     assert captured["url"].startswith("https://worker/deactivate")
     assert json.loads(captured["data"]) == {"chat_ids": ["1", "2"]}
+    assert captured["ua"] == dr.WORKER_USER_AGENT
 
 
 def test_deactivate_noop_when_url_unset(monkeypatch):
