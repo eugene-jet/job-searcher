@@ -178,6 +178,38 @@ async function computeStats(env) {
   return totals;
 }
 
+// Store one aggregate snapshot per day (keyed by date) so the dashboard can
+// chart growth over time. Only counts are stored, never chat ids. Called on the
+// cron tick; a second call the same day just overwrites that day's point.
+async function recordSnapshot(env) {
+  const date = new Date().toISOString().slice(0, 10);
+  const counts = await computeStats(env);
+  await env.SUBSCRIBERS.put(`stat:${date}`, JSON.stringify({ date, ...counts }));
+}
+
+// The stored daily snapshots, oldest first, plus a live "current" reading. A
+// point for today is always present so the chart is never empty, even before
+// the day's first cron snapshot has been written.
+async function history(env) {
+  const points = [];
+  let cursor;
+  do {
+    const page = await env.SUBSCRIBERS.list({ prefix: "stat:", cursor });
+    for (const entry of page.keys) {
+      const record = await env.SUBSCRIBERS.get(entry.name, "json");
+      if (record) points.push(record);
+    }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor);
+  points.sort((a, b) => (a.date < b.date ? -1 : 1));
+  const current = await computeStats(env);
+  const today = new Date().toISOString().slice(0, 10);
+  if (!points.length || points[points.length - 1].date !== today) {
+    points.push({ date: today, ...current });
+  }
+  return { history: points, current };
+}
+
 // Retire the chats the daily report could not reach (they blocked the bot or
 // the chat was deleted).
 async function handleDeactivate(request, env) {
@@ -202,11 +234,112 @@ async function handleDeactivate(request, env) {
   return json({ deactivated: ids.length });
 }
 
+// Public dashboard page. Reads /history (aggregate counts only, no chat ids)
+// and draws the subscriber trend. Served at /dashboard with no key so the link
+// can be shared; nothing personal is exposed.
+const DASHBOARD_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JobsbroBot — subscribers</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --fg: #0f172a; --muted: #64748b;
+    --border: #e2e8f0; --accent: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b1220; --card: #131c2e; --fg: #e5edff; --muted: #93a4c3;
+      --border: #24314d; --accent: #5b8cff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 24px 16px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .sub a { color: var(--accent); text-decoration: none; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px;
+  }
+  .card .n { font-size: 28px; font-weight: 700; }
+  .card .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .card.accent .n { color: var(--accent); }
+  .chart-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px; height: 320px;
+  }
+  .foot { color: var(--muted); font-size: 12px; margin-top: 16px; text-align: center; }
+  @media (max-width: 520px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>JobsbroBot — subscribers</h1>
+  <p class="sub">Live count of people subscribed to the design-jobs digest · <a href="https://t.me/JobsbroBot">t.me/JobsbroBot</a></p>
+  <div class="cards">
+    <div class="card accent"><div class="n" id="active">–</div><div class="l">Active</div></div>
+    <div class="card"><div class="n" id="total">–</div><div class="l">Total</div></div>
+    <div class="card"><div class="n" id="stopped">–</div><div class="l">Stopped</div></div>
+    <div class="card"><div class="n" id="blocked">–</div><div class="l">Blocked</div></div>
+  </div>
+  <div class="chart-box"><canvas id="chart"></canvas></div>
+  <p class="foot" id="foot">Loading…</p>
+</div>
+<script>
+async function load() {
+  try {
+    const res = await fetch('/history', { cache: 'no-store' });
+    const data = await res.json();
+    const hist = data.history || [];
+    const cur = data.current || { total: 0, active: 0, blocked: 0, stopped: 0 };
+    document.getElementById('active').textContent = cur.active;
+    document.getElementById('total').textContent = cur.total;
+    document.getElementById('stopped').textContent = cur.stopped;
+    document.getElementById('blocked').textContent = cur.blocked;
+    document.getElementById('foot').textContent = 'Updated ' + new Date().toLocaleString();
+    const labels = hist.map(function (p) { return p.date; });
+    const active = hist.map(function (p) { return p.active; });
+    const total = hist.map(function (p) { return p.total; });
+    const muted = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
+    new Chart(document.getElementById('chart'), {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Active', data: active, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.15)', fill: true, tension: .3, pointRadius: 3 },
+          { label: 'Total', data: total, borderColor: muted || '#94a3b8', borderDash: [4, 4], fill: false, tension: .3, pointRadius: 0 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        plugins: { legend: { labels: { boxWidth: 12 } } }
+      }
+    });
+  } catch (e) {
+    document.getElementById('foot').textContent = 'Failed to load stats.';
+  }
+}
+load();
+</script>
+</body>
+</html>`;
+
 export default {
   // Fired by the crons declared in wrangler.toml. A successful dispatch returns
-  // HTTP 204 with an empty body.
+  // HTTP 204 with an empty body. It also records the day's subscriber snapshot.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(dispatch(env));
+    ctx.waitUntil(recordSnapshot(env));
   },
 
   async fetch(request, env) {
@@ -232,6 +365,16 @@ export default {
       if (!authorized(url, env)) return new Response("forbidden\n", { status: 403 });
       if (request.method !== "POST") return new Response("method not allowed\n", { status: 405 });
       return handleDeactivate(request, env);
+    }
+
+    // Public, key-free: aggregate counts only (no chat ids), for the dashboard.
+    if (path === "/history") {
+      return json(await history(env));
+    }
+    if (path === "/dashboard") {
+      return new Response(DASHBOARD_HTML, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     }
 
     // Anything else is the manual dispatch trigger, guarded by TRIGGER_SECRET
