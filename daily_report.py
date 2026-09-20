@@ -258,15 +258,32 @@ def send_telegram(token, chat_id, messages):
     return _deliver(token, chat_id, messages) == "ok"
 
 
+def _worker_headers(key=None, extra=None):
+    """Headers for a request to the subscriber Worker.
+
+    Always sets an explicit ``User-Agent`` (Cloudflare answers the default one
+    with a 403). When ``key`` is given it is sent as an ``Authorization: Bearer``
+    token, keeping the secret out of the URL/query string; when it is ``None``
+    the request relies on any key already embedded in the URL, so an unmigrated
+    ``?key=`` setup keeps working.
+    """
+    headers = {"User-Agent": WORKER_USER_AGENT}
+    if extra:
+        headers.update(extra)
+    if key:
+        headers["Authorization"] = "Bearer " + key
+    return headers
+
+
 def fetch_subscribers():
     """Return the active subscriber chat ids from the bot's ``/start`` list.
 
     The list lives outside this repository (chat ids are personal data and must
     never be committed) and is served by the Cloudflare Worker in ``trigger/``.
-    ``SUBSCRIBERS_URL`` points at that endpoint with its auth key already baked
-    in, for example ``https://worker.example/subscribers?key=...``. Best-effort:
-    any failure logs and yields an empty list, so a Worker outage never blocks
-    the digest to the static recipients.
+    ``SUBSCRIBERS_URL`` points at that endpoint. The read key is sent as a Bearer
+    token when ``WORKER_API_KEY`` is set; otherwise it must be baked into the URL
+    (``?key=...``). Best-effort: any failure logs and yields an empty list, so a
+    Worker outage never blocks the digest to the static recipients.
 
     Accepts either a bare JSON array of ids or ``{"subscribers": [...]}``.
     """
@@ -274,7 +291,9 @@ def fetch_subscribers():
     if not url:
         return []
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": WORKER_USER_AGENT})
+        req = urllib.request.Request(
+            url, headers=_worker_headers(os.environ.get("WORKER_API_KEY"))
+        )
         with urllib.request.urlopen(req, timeout=30) as resp:
             payload = json.loads(resp.read().decode())
     except Exception as exc:  # noqa: BLE001 - delivery must not break the run
@@ -311,21 +330,21 @@ def collect_recipients():
 def deactivate_subscribers(chat_ids):
     """Ask the Worker to retire recipients that blocked the bot or vanished.
 
-    Posts the ids to ``DEACTIVATE_URL`` (with its auth key baked in) so they are
-    marked inactive and dropped from future runs. Best-effort: a failure is
-    logged and ignored — the worst case is retrying a dead id next run.
+    Posts the ids to ``DEACTIVATE_URL`` so they are marked inactive and dropped
+    from future runs. This is a destructive endpoint, so the admin key is sent as
+    a Bearer token from ``WORKER_ADMIN_KEY`` (falling back to ``WORKER_API_KEY``,
+    then to any key baked into the URL). Best-effort: a failure is logged and
+    ignored — the worst case is retrying a dead id next run.
     """
     url = os.environ.get("DEACTIVATE_URL")
     if not url or not chat_ids:
         return
+    key = os.environ.get("WORKER_ADMIN_KEY") or os.environ.get("WORKER_API_KEY")
     data = json.dumps({"chat_ids": list(chat_ids)}).encode()
     req = urllib.request.Request(
         url,
         data=data,
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": WORKER_USER_AGENT,
-        },
+        headers=_worker_headers(key, {"Content-Type": "application/json"}),
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:

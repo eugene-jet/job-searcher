@@ -83,11 +83,16 @@ only push to a fixed chat or channel.
    ```bash
    wrangler secret put TELEGRAM_BOT_TOKEN  # the @BotFather token
    wrangler secret put WEBHOOK_SECRET      # any long random string
-   wrangler secret put API_KEY             # any long random string
+   wrangler secret put API_KEY             # read key: any long random string
+   wrangler secret put ADMIN_KEY           # admin key: a different random string
    ```
 
-   `WEBHOOK_SECRET` proves an incoming update really came from Telegram; `API_KEY`
-   guards the JSON endpoints the report calls.
+   `WEBHOOK_SECRET` proves an incoming update really came from Telegram. `API_KEY`
+   is the **read** key (`/subscribers`, `/stats`); `ADMIN_KEY` is the **admin**
+   key that the destructive endpoints (`/broadcast`, `/deactivate`) require, so a
+   leak of the widely-used read key cannot spam or wipe subscribers. Until
+   `ADMIN_KEY` is set the admin endpoints fall back to accepting `API_KEY`, so you
+   can add it later without an outage.
 
 3. **Deploy** so the new routes and binding go live:
 
@@ -108,37 +113,44 @@ only push to a fixed chat or channel.
    Open a chat with the bot and send `/start`; it should reply and appear in the
    list (step below).
 
-5. **Let the report read the list.** Add two repository secrets in GitHub →
-   Settings → Secrets and variables → Actions, each the endpoint URL with the
-   `API_KEY` baked in, and wire them into the workflow env:
+5. **Let the report read the list.** Add repository secrets in GitHub → Settings
+   → Secrets and variables → Actions and wire them into the workflow env. The
+   report sends the key as a Bearer token, so the URLs stay keyless:
 
-   - `SUBSCRIBERS_URL` → `https://…workers.dev/subscribers?key=<API_KEY>`
-   - `DEACTIVATE_URL` → `https://…workers.dev/deactivate?key=<API_KEY>`
+   - `SUBSCRIBERS_URL` → `https://…workers.dev/subscribers`
+   - `DEACTIVATE_URL` → `https://…workers.dev/deactivate`
+   - `WORKER_API_KEY` → the `API_KEY` value (read)
+   - `WORKER_ADMIN_KEY` → the `ADMIN_KEY` value (for `/deactivate`)
 
    With `SUBSCRIBERS_URL` set, the report sends to every active subscriber (plus
    any static `TELEGRAM_CHAT_ID`); with `DEACTIVATE_URL` set, chats that blocked
-   the bot are retired automatically.
+   the bot are retired automatically. (A legacy `?key=<API_KEY>` baked into the
+   URL still works if you leave the key vars unset, but the Bearer token keeps the
+   secret out of request logs.)
 
 ### Endpoints
 
-The routes marked **key** require `?key=<API_KEY>` because they expose chat ids
-or mutate state. The **public** routes return only aggregate counts (no personal
-data), so the dashboard link can be shared freely.
+Authenticated routes take the key as `Authorization: Bearer <key>` (preferred) or
+a `?key=<key>` query (legacy fallback — avoid, it leaks into logs). **read** routes
+accept `API_KEY` or `ADMIN_KEY`; **admin** routes require `ADMIN_KEY`. **public**
+routes return only aggregate counts (no personal data), so the dashboard link can
+be shared freely.
 
 | Route | Method | Access | Purpose |
 | --- | --- | --- | --- |
 | `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start` and `/stop`. |
-| `/subscribers` | GET | key | Active subscriber chat ids: `{"subscribers": [...]}`. |
-| `/deactivate` | POST | key | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
-| `/broadcast` | POST | key | Send one message to every active subscriber: `{"text": "..."}`. |
-| `/stats` | GET | key | Counts: `{"total", "active", "blocked", "stopped"}`. |
+| `/subscribers` | GET | read | Active subscriber chat ids: `{"subscribers": [...]}`. |
+| `/stats` | GET | read | Counts: `{"total", "active", "blocked", "stopped"}`. |
+| `/deactivate` | POST | admin | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
+| `/broadcast` | POST | admin | Send one message to every active subscriber: `{"text": "..."}`. |
 | `/history` | GET | public | Daily count snapshots + live current, for the dashboard. |
 | `/dashboard` | GET | public | HTML page charting subscribers over time. |
 
 Check how many people use the bot at any time:
 
 ```bash
-curl "https://job-searcher-trigger.<your-subdomain>.workers.dev/stats?key=<API_KEY>"
+curl -H "Authorization: Bearer <API_KEY>" \
+  "https://job-searcher-trigger.<your-subdomain>.workers.dev/stats"
 ```
 
 ### Broadcast
@@ -147,7 +159,8 @@ Send a one-off message (an announcement, or just a liveness ping) to every
 active subscriber:
 
 ```bash
-curl -X POST "https://job-searcher-trigger.<your-subdomain>.workers.dev/broadcast?key=<API_KEY>" \
+curl -X POST "https://job-searcher-trigger.<your-subdomain>.workers.dev/broadcast" \
+  -H "Authorization: Bearer <ADMIN_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello from the jobs bot!"}'
 ```
