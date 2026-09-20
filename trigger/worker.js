@@ -67,8 +67,30 @@ function json(obj, status = 200) {
   });
 }
 
-function authorized(url, env) {
-  return env.API_KEY && url.searchParams.get("key") === env.API_KEY;
+// Read the presented credential from the Authorization: Bearer header, falling
+// back to the ?key= query for backwards compatibility. Prefer the header: query
+// strings leak into logs, browser history and Referer.
+function credential(request, url) {
+  const header = request.headers.get("Authorization") || "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (match) return match[1];
+  return url.searchParams.get("key");
+}
+
+// Read access (/subscribers, /stats): the read key or the admin key.
+function authorizedRead(request, url, env) {
+  const key = credential(request, url);
+  if (env.API_KEY && key === env.API_KEY) return true;
+  return Boolean(env.ADMIN_KEY) && key === env.ADMIN_KEY;
+}
+
+// Admin/destructive access (/broadcast, /deactivate): the admin key only. Until
+// ADMIN_KEY is configured it falls back to API_KEY, so deploying this before the
+// key is provisioned does not lock the daily report out of /deactivate.
+function authorizedAdmin(request, url, env) {
+  const key = credential(request, url);
+  if (env.ADMIN_KEY) return key === env.ADMIN_KEY;
+  return Boolean(env.API_KEY) && key === env.API_KEY;
 }
 
 // --- Telegram bot ----------------------------------------------------------
@@ -414,22 +436,23 @@ export default {
       return handleWebhook(request, env);
     }
 
-    // JSON endpoints for the daily report, all guarded by API_KEY.
+    // Read endpoints: the read key (or the admin key).
     if (path === "/subscribers") {
-      if (!authorized(url, env)) return new Response("forbidden\n", { status: 403 });
+      if (!authorizedRead(request, url, env)) return new Response("forbidden\n", { status: 403 });
       return json(await listSubscribers(env));
     }
     if (path === "/stats") {
-      if (!authorized(url, env)) return new Response("forbidden\n", { status: 403 });
+      if (!authorizedRead(request, url, env)) return new Response("forbidden\n", { status: 403 });
       return json(await computeStats(env));
     }
+    // Destructive endpoints: the admin key only.
     if (path === "/deactivate") {
-      if (!authorized(url, env)) return new Response("forbidden\n", { status: 403 });
+      if (!authorizedAdmin(request, url, env)) return new Response("forbidden\n", { status: 403 });
       if (request.method !== "POST") return new Response("method not allowed\n", { status: 405 });
       return handleDeactivate(request, env);
     }
     if (path === "/broadcast") {
-      if (!authorized(url, env)) return new Response("forbidden\n", { status: 403 });
+      if (!authorizedAdmin(request, url, env)) return new Response("forbidden\n", { status: 403 });
       if (request.method !== "POST") return new Response("method not allowed\n", { status: 405 });
       return handleBroadcast(request, env);
     }

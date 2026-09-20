@@ -286,6 +286,34 @@ def test_fetch_subscribers_sets_user_agent(monkeypatch):
     assert captured["ua"] == dr.WORKER_USER_AGENT
 
 
+def test_fetch_subscribers_sends_bearer_when_key_set(monkeypatch):
+    monkeypatch.setenv("SUBSCRIBERS_URL", "https://worker/subscribers")
+    monkeypatch.setenv("WORKER_API_KEY", "readkey")
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["auth"] = request.get_header("Authorization")
+        return _JsonResponse([1])
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    dr.fetch_subscribers()
+    assert captured["auth"] == "Bearer readkey"
+
+
+def test_fetch_subscribers_no_auth_header_without_key(monkeypatch):
+    monkeypatch.setenv("SUBSCRIBERS_URL", "https://worker/subscribers?key=baked")
+    monkeypatch.delenv("WORKER_API_KEY", raising=False)
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["auth"] = request.get_header("Authorization")
+        return _JsonResponse([1])
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    dr.fetch_subscribers()
+    assert captured["auth"] is None
+
+
 def test_fetch_subscribers_parses_wrapped_object(monkeypatch):
     monkeypatch.setenv("SUBSCRIBERS_URL", "https://worker/subscribers")
     monkeypatch.setattr(
@@ -336,6 +364,37 @@ def test_deactivate_posts_ids(monkeypatch):
     assert captured["url"].startswith("https://worker/deactivate")
     assert json.loads(captured["data"]) == {"chat_ids": ["1", "2"]}
     assert captured["ua"] == dr.WORKER_USER_AGENT
+
+
+def test_deactivate_sends_admin_bearer(monkeypatch):
+    monkeypatch.setenv("DEACTIVATE_URL", "https://worker/deactivate")
+    monkeypatch.setenv("WORKER_ADMIN_KEY", "adminkey")
+    monkeypatch.setenv("WORKER_API_KEY", "readkey")
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["auth"] = request.get_header("Authorization")
+        return _FakeResponse()
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    dr.deactivate_subscribers(["1"])
+    # The admin key wins over the read key for a destructive call.
+    assert captured["auth"] == "Bearer adminkey"
+
+
+def test_deactivate_falls_back_to_api_key(monkeypatch):
+    monkeypatch.setenv("DEACTIVATE_URL", "https://worker/deactivate")
+    monkeypatch.delenv("WORKER_ADMIN_KEY", raising=False)
+    monkeypatch.setenv("WORKER_API_KEY", "readkey")
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["auth"] = request.get_header("Authorization")
+        return _FakeResponse()
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    dr.deactivate_subscribers(["1"])
+    assert captured["auth"] == "Bearer readkey"
 
 
 def test_deactivate_noop_when_url_unset(monkeypatch):

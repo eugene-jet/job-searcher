@@ -41,6 +41,12 @@ jobs:
           # trigger/README.md. Both are unset until the subscription bot is live.
           SUBSCRIBERS_URL: ${{ secrets.SUBSCRIBERS_URL }}
           DEACTIVATE_URL: ${{ secrets.DEACTIVATE_URL }}
+          # Worker auth keys, sent as Bearer tokens (preferred over a ?key= in the
+          # URL). WORKER_API_KEY is the read key; WORKER_ADMIN_KEY authorises the
+          # destructive /deactivate call. Optional: if unset, a key baked into the
+          # URL above is used instead.
+          WORKER_API_KEY: ${{ secrets.WORKER_API_KEY }}
+          WORKER_ADMIN_KEY: ${{ secrets.WORKER_ADMIN_KEY }}
         run: python3 daily_report.py
 
       - name: Open and merge report PR
