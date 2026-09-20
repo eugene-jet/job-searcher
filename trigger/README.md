@@ -130,6 +130,7 @@ data), so the dashboard link can be shared freely.
 | `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start` and `/stop`. |
 | `/subscribers` | GET | key | Active subscriber chat ids: `{"subscribers": [...]}`. |
 | `/deactivate` | POST | key | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
+| `/broadcast` | POST | key | Send one message to every active subscriber: `{"text": "..."}`. |
 | `/stats` | GET | key | Counts: `{"total", "active", "blocked", "stopped"}`. |
 | `/history` | GET | public | Daily count snapshots + live current, for the dashboard. |
 | `/dashboard` | GET | public | HTML page charting subscribers over time. |
@@ -139,6 +140,23 @@ Check how many people use the bot at any time:
 ```bash
 curl "https://job-searcher-trigger.<your-subdomain>.workers.dev/stats?key=<API_KEY>"
 ```
+
+### Broadcast
+
+Send a one-off message (an announcement, or just a liveness ping) to every
+active subscriber:
+
+```bash
+curl -X POST "https://job-searcher-trigger.<your-subdomain>.workers.dev/broadcast?key=<API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello from the jobs bot!"}'
+```
+
+It returns `{"recipients", "sent", "blocked"}` — how many were targeted, how many
+received it, and how many had blocked the bot (those are retired automatically,
+so the count self-heals). The text is sent as-is (no Markdown/HTML parsing). Keep
+it to small lists: Telegram caps broadcasts near 30 messages per second, which
+this endpoint does not throttle for.
 
 ### Dashboard
 
