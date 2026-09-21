@@ -19,8 +19,11 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-import analytics
 import scrapers
+
+# ``analytics`` (and its openpyxl dependency) is imported lazily inside main()'s
+# normal path: a fast /start welcome run needs neither, so it can run with no
+# third-party dependencies installed.
 
 # Timezone the report is written for. The GitHub runner's clock is UTC, so the
 # "generated at" stamp is converted into this zone before display.
@@ -379,20 +382,27 @@ def select_messages(chat_id, allow_igaming, full, reduced):
     return reduced
 
 
-def _prepare(data, today_d, cutoff):
+def _prepare(data, today_d, cutoff, fast=False):
     """Rank, window, fetch DOU descriptions and split iGaming out of the scraped
     data. Returns ``(igaming, djinni, dou, djinni_all, dou_all)``, where the
     ``*_all`` lists keep iGaming vacancies in their source (for the reduced
     variant) and ``djinni``/``dou`` exclude them (for the full variant).
+
+    ``fast=True`` (used for a /start welcome digest) skips the per-vacancy HTTP
+    requests — the Djinni "Оновлено" re-ranking and the DOU description fetches —
+    which are the bulk of the runtime. The welcome digest then windows/sorts by
+    the published date and classifies iGaming from the title/company only; that
+    is fine because a non-privileged recipient gets the reduced variant anyway.
     """
     # Djinni's list only exposes the published date, but a posting can be bumped
     # afterwards. Rank by the "Оновлено" (updated) date when the vacancy page
     # exposes one so a re-bumped posting resurfaces; keep the published date
     # otherwise. Done before windowing because the update date decides the window.
-    for v in data["djinni"]:
-        updated = scrapers.fetch_djinni_updated(v["url"], today_d)
-        if updated:
-            v["date_posted"] = updated
+    if not fast:
+        for v in data["djinni"]:
+            updated = scrapers.fetch_djinni_updated(v["url"], today_d)
+            if updated:
+                v["date_posted"] = updated
 
     def window_sorted(source):
         items = [v for v in data[source] if (v.get("date_posted") or "") >= cutoff]
@@ -407,9 +417,10 @@ def _prepare(data, today_d, cutoff):
     # DOU listings carry no description, so open each DOU vacancy in the window
     # and stash its body text — but skip the fetch when the title/company
     # already flags it as iGaming.
-    for v in dou:
-        if not is_igaming(v):
-            v["description"] = scrapers.fetch_dou_description(v["url"])
+    if not fast:
+        for v in dou:
+            if not is_igaming(v):
+                v["description"] = scrapers.fetch_dou_description(v["url"])
 
     # Keep the full per-source lists (iGaming included) for the reduced report
     # variant, which folds iGaming vacancies back into Djinni/DOU with no
@@ -445,7 +456,10 @@ def main():
         return 1
 
     only_chat = os.environ.get("ONLY_CHAT_ID", "").strip()
-    igaming, djinni, dou, djinni_all, dou_all = _prepare(data, today_d, cutoff)
+    # A welcome run skips the slow per-vacancy fetches for a faster reply.
+    igaming, djinni, dou, djinni_all, dou_all = _prepare(
+        data, today_d, cutoff, fast=bool(only_chat)
+    )
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     allow_igaming = igaming_recipients()
 
@@ -481,6 +495,8 @@ def main():
     # then regenerate the Excel workbook + chart from the running CSV. A source
     # that failed is absent from `_totals`, so `.get` yields None, which is stored
     # as a gap in the chart rather than a real zero.
+    import analytics  # lazy: only the normal path needs it (and openpyxl)
+
     counts = {
         "dou": totals.get("dou"),
         "djinni": totals.get("djinni"),
