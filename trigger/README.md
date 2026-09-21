@@ -68,6 +68,19 @@ and Telegram. (If you did not set `TRIGGER_SECRET`, drop the `?key=` part.)
 This turns the one-way digest into a bot people can subscribe to. Skip it if you
 only push to a fixed chat or channel.
 
+### Welcome digest on `/start`
+
+When a chat sends `/start`, the Worker replies with the confirmation and then
+dispatches `daily.yml` with the `only_chat_id` input set to that chat. That run
+scrapes fresh and sends the digest to **only** that chat, so a new subscriber
+sees the current vacancies within a minute instead of waiting for the next
+scheduled run. The welcome run skips analytics, the report file and the
+subscriber fan-out (it leaves no commit), and skips the dependency install for
+speed. It is rate-limited to **one welcome run per chat per 10 minutes**; a
+`/start` inside that window still gets the confirmation reply but no new digest.
+The digest respects the iGaming rule (a non-privileged chat gets the reduced
+variant). See `ONLY_CHAT_ID` in [`daily.yml`](../.github/workflows/daily.yml).
+
 ### One-time setup
 
 1. **Create the KV namespace** that stores the subscriber list, then paste the
