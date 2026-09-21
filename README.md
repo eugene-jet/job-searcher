@@ -14,7 +14,8 @@ scraping runs on GitHub Actions, and the punctual twice-a-day schedule is driven
 by a small Cloudflare Worker.
 
 **Subscribe:** open [@JobsbroBot](https://t.me/JobsbroBot) in Telegram and press
-*Start* to receive the digest in your own direct messages.
+*Start*. You get the current digest within a minute, and the twice-daily digest
+in your own direct messages from then on.
 
 ## Sample output
 
@@ -164,12 +165,15 @@ notification. `TELEGRAM_CHAT_ID` may list several comma-separated destinations
 
 Optionally the digest can run as a subscription bot: people open
 [@JobsbroBot](https://t.me/JobsbroBot) and press `/start`, and each receives the
-report in their own DM. Subscribers are stored by the
-Cloudflare Worker in [`trigger/`](trigger/), and the report reads the active
-list (via the `SUBSCRIBERS_URL` secret) on top of any static `TELEGRAM_CHAT_ID`,
-retiring anyone who blocked the bot (via `DEACTIVATE_URL`). This is what makes
-the user count meaningful — see [`trigger/README.md`](trigger/README.md) for the
-setup and the `/stats` endpoint that reports how many people use the bot.
+report in their own DM. Pressing `/start` also sends the **current digest right
+away** — the Worker dispatches a one-off, freshly scraped run scoped to just that
+chat (rate-limited to one per chat every 10 minutes), so a new subscriber does
+not wait for the next scheduled run. Subscribers are stored by the Cloudflare
+Worker in [`trigger/`](trigger/), and the report reads the active list (via the
+`SUBSCRIBERS_URL` secret) on top of any static `TELEGRAM_CHAT_ID`, retiring
+anyone who blocked the bot (via `DEACTIVATE_URL`). This is what makes the user
+count meaningful — see [`trigger/README.md`](trigger/README.md) for the setup and
+the `/stats` endpoint that reports how many people use the bot.
 
 A shareable **[dashboard](https://job-searcher-trigger.evnikmoroz.workers.dev/dashboard)**
 charts active and total subscribers over time. It shows only aggregate counts
