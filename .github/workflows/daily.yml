@@ -36,8 +36,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
 
+      # A welcome run (only_chat_id set) never touches analytics/openpyxl, so it
+      # needs no third-party deps — skip the install for a faster reply.
       - name: Install dependencies
+        if: github.event.inputs.only_chat_id == ''
         run: pip install -r requirements.txt
 
       - name: Generate report and send to Telegram
