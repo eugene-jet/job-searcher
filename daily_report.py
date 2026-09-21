@@ -367,36 +367,24 @@ def deactivate_subscribers(chat_ids):
         sys.stderr.write("Subscriber deactivate failed: %s\n" % exc)
 
 
-def main():
-    now_kyiv = datetime.datetime.now(KYIV_TZ)
-    sent_at = now_kyiv.strftime("%d-%m-%Y %H:%M")
-    today_d = now_kyiv.date()
-    today = today_d.isoformat()
-    cutoff = (today_d - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat()
+def select_messages(chat_id, allow_igaming, full, reduced):
+    """Pick the report variant for a recipient.
 
-    data = scrapers.fetch_all(relevant_only=True)
-    errors = data.get("_errors", {})
-    totals = data.get("_totals", {})
+    ``full`` keeps the iGaming block; ``reduced`` folds iGaming vacancies back
+    into Djinni/DOU. When ``allow_igaming`` is empty everyone gets ``full``
+    (original behaviour); otherwise only the listed chat ids do.
+    """
+    if not allow_igaming or chat_id in allow_igaming:
+        return full
+    return reduced
 
-    # If BOTH sources failed, exit non-zero so the run is visibly broken and no
-    # empty report gets committed.
-    if errors and not data["dou"] and not data["djinni"]:
-        sys.stderr.write("Both scrapers failed: %s\n" % errors)
-        return 1
 
-    # Record the day's per-source scanned totals — the raw number each board
-    # returns before the relevance filter, i.e. the count the site itself shows
-    # (DOU's whole Design category, Djinni's Product Design + UI/UX tag listing) —
-    # then regenerate the Excel workbook + chart from the running CSV. A source
-    # that failed is absent from `_totals`, so `.get` yields None, which is stored
-    # as a gap in the chart rather than a real zero.
-    counts = {
-        "dou": totals.get("dou"),
-        "djinni": totals.get("djinni"),
-    }
-    analytics.record_day(counts, today)
-    analytics.build_workbook()
-
+def _prepare(data, today_d, cutoff):
+    """Rank, window, fetch DOU descriptions and split iGaming out of the scraped
+    data. Returns ``(igaming, djinni, dou, djinni_all, dou_all)``, where the
+    ``*_all`` lists keep iGaming vacancies in their source (for the reduced
+    variant) and ``djinni``/``dou`` exclude them (for the full variant).
+    """
     # Djinni's list only exposes the published date, but a posting can be bumped
     # afterwards. Rank by the "Оновлено" (updated) date when the vacancy page
     # exposes one so a re-bumped posting resurfaces; keep the published date
@@ -436,6 +424,69 @@ def main():
     igaming.sort(key=lambda x: x["date_posted"], reverse=True)
     djinni = [v for v in djinni if not is_igaming(v)]
     dou = [v for v in dou if not is_igaming(v)]
+    return igaming, djinni, dou, djinni_all, dou_all
+
+
+def main():
+    now_kyiv = datetime.datetime.now(KYIV_TZ)
+    sent_at = now_kyiv.strftime("%d-%m-%Y %H:%M")
+    today_d = now_kyiv.date()
+    today = today_d.isoformat()
+    cutoff = (today_d - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat()
+
+    data = scrapers.fetch_all(relevant_only=True)
+    errors = data.get("_errors", {})
+    totals = data.get("_totals", {})
+
+    # If BOTH sources failed, exit non-zero so the run is visibly broken and no
+    # empty report gets committed.
+    if errors and not data["dou"] and not data["djinni"]:
+        sys.stderr.write("Both scrapers failed: %s\n" % errors)
+        return 1
+
+    only_chat = os.environ.get("ONLY_CHAT_ID", "").strip()
+    igaming, djinni, dou, djinni_all, dou_all = _prepare(data, today_d, cutoff)
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    allow_igaming = igaming_recipients()
+
+    def variants():
+        """Build the full report messages, and the reduced ones only when the
+        iGaming block is restricted to specific chats."""
+        full = build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals)
+        reduced = (
+            build_telegram_messages(today, cutoff, [], djinni_all, dou_all, sent_at, totals)
+            if allow_igaming
+            else None
+        )
+        return full, reduced
+
+    # Welcome digest: a single /start-triggered run that sends a fresh digest to
+    # just one chat. It skips analytics, the report file and the subscriber
+    # fan-out, so it leaves no daily-report commit and no analytics rows behind.
+    if only_chat:
+        if token:
+            full, reduced = variants()
+            messages = select_messages(only_chat, allow_igaming, full, reduced)
+            status = _deliver(token, only_chat, messages)
+            print("Telegram: welcome %s -> %s (%d message(s))" % (status, only_chat, len(messages)))
+        print(
+            "Welcome digest %s | iGaming %d | Djinni %d | DOU %d"
+            % (only_chat, len(igaming), len(djinni), len(dou))
+        )
+        return 0
+
+    # Record the day's per-source scanned totals — the raw number each board
+    # returns before the relevance filter, i.e. the count the site itself shows
+    # (DOU's whole Design category, Djinni's Product Design + UI/UX tag listing) —
+    # then regenerate the Excel workbook + chart from the running CSV. A source
+    # that failed is absent from `_totals`, so `.get` yields None, which is stored
+    # as a gap in the chart rather than a real zero.
+    counts = {
+        "dou": totals.get("dou"),
+        "djinni": totals.get("djinni"),
+    }
+    analytics.record_day(counts, today)
+    analytics.build_workbook()
 
     report = build_report(today, cutoff, igaming, djinni, dou, errors, sent_at, totals)
     os.makedirs(REPORTS_DIR, exist_ok=True)
@@ -462,29 +513,17 @@ def main():
     # Recipients are the static TELEGRAM_CHAT_ID list plus everyone who
     # subscribed to the bot with /start (fetched from the Worker); see
     # collect_recipients. Delivery is skipped locally, where no token is set.
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if token:
         recipients = collect_recipients()
         if recipients:
             # Full report keeps iGaming as its own top block; the reduced report
-            # (built on demand) folds iGaming vacancies back into Djinni/DOU with
-            # no separate block. IGAMING_CHAT_IDS decides who gets which.
-            full_messages = build_telegram_messages(
-                today, cutoff, igaming, djinni, dou, sent_at, totals
-            )
-            reduced_messages = None
-            allow_igaming = igaming_recipients()
+            # folds iGaming vacancies back into Djinni/DOU. IGAMING_CHAT_IDS
+            # decides who gets which (see select_messages).
+            full, reduced = variants()
             sent = 0
             blocked = []
             for chat_id in recipients:
-                if not allow_igaming or chat_id in allow_igaming:
-                    messages = full_messages
-                else:
-                    if reduced_messages is None:
-                        reduced_messages = build_telegram_messages(
-                            today, cutoff, [], djinni_all, dou_all, sent_at, totals
-                        )
-                    messages = reduced_messages
+                messages = select_messages(chat_id, allow_igaming, full, reduced)
                 status = _deliver(token, chat_id, messages)
                 if status == "ok":
                     sent += 1

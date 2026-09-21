@@ -436,6 +436,19 @@ def test_igaming_recipients_parses_list(monkeypatch):
     assert dr.igaming_recipients() == {"172575810", "42"}
 
 
+def test_select_messages_full_when_no_restriction():
+    # Empty allow-set => everyone gets the full variant.
+    assert dr.select_messages("42", set(), "FULL", "REDUCED") == "FULL"
+
+
+def test_select_messages_full_for_listed_chat():
+    assert dr.select_messages("42", {"42"}, "FULL", "REDUCED") == "FULL"
+
+
+def test_select_messages_reduced_for_other_chat():
+    assert dr.select_messages("99", {"42"}, "FULL", "REDUCED") == "REDUCED"
+
+
 def test_full_report_shows_igaming_block():
     ig = [_vac(source="djinni", title="Designer", company="iGaming Co")]
     dj = [_vac(source="djinni", title="Product Designer")]

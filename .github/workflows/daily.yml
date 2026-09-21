@@ -7,7 +7,15 @@ name: Daily design vacancy report
 
 on:
   # Triggered externally by the Cloudflare Worker in trigger/ via workflow_dispatch.
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      # When set, the run sends a fresh one-off digest to just this chat id (a
+      # /start welcome), skipping analytics, the report file and the fan-out.
+      # Empty (cron and normal manual runs) = the usual full report.
+      only_chat_id:
+        description: "Send a one-off welcome digest to only this chat id"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -51,6 +59,8 @@ jobs:
           # everyone sees it (original behaviour); when set, only these ids get
           # the iGaming block and everyone else gets it folded into Djinni/DOU.
           IGAMING_CHAT_IDS: ${{ secrets.IGAMING_CHAT_IDS }}
+          # Set by the /start webhook: send a fresh digest to only this chat.
+          ONLY_CHAT_ID: ${{ github.event.inputs.only_chat_id }}
         run: python3 daily_report.py
 
       - name: Open and merge report PR

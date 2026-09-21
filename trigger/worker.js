@@ -36,14 +36,17 @@ const REF = "main";
 
 const START_REPLY =
   "Готово! Ти підписаний на дайджест свіжих вакансій Product Design та UI/UX. " +
-  "Він приходитиме двічі на день. Щоб відписатися — надішли /stop.";
+  "Він приходитиме двічі на день. Актуальний дайджест надішлю за хвилину. " +
+  "Щоб відписатися — надішли /stop.";
 const STOP_REPLY =
   "Ти відписаний — дайджест більше не надходитиме. Щоб повернутися, надішли /start.";
 const HELP_REPLY =
   "Я надсилаю дайджест вакансій Product Design та UI/UX. " +
   "Команди: /start — підписатися, /stop — відписатися.";
 
-async function dispatch(env) {
+async function dispatch(env, inputs) {
+  const body = { ref: REF };
+  if (inputs) body.inputs = inputs;
   return fetch(
     `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
     {
@@ -55,7 +58,7 @@ async function dispatch(env) {
         // GitHub rejects API requests without a User-Agent.
         "User-Agent": "job-searcher-cron-trigger",
       },
-      body: JSON.stringify({ ref: REF }),
+      body: JSON.stringify(body),
     },
   );
 }
@@ -157,6 +160,12 @@ async function handleWebhook(request, env) {
     if (text === "/start" || text.startsWith("/start ")) {
       await subscribe(env, chatId, msg.from);
       await reply(env, chatId, START_REPLY);
+      // Send a fresh digest scoped to just this chat by dispatching the workflow
+      // with only_chat_id. Rate-limited so repeated /start cannot fan out many
+      // heavy scrapes (one welcome run per chat per 10 minutes).
+      if (!(await rateLimited(env, "welcome:" + chatId, 1, 600))) {
+        await dispatch(env, { only_chat_id: chatId });
+      }
     } else if (text === "/stop" || text.startsWith("/stop ")) {
       await unsubscribe(env, chatId);
       await reply(env, chatId, STOP_REPLY);
