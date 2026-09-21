@@ -25,13 +25,27 @@ def test_is_relevant_keeps_design_titles():
         "Graphic Designer",
         "Senior Graphic Designer",
         "Middle Graphic Design Specialist",
+        # Ukrainian
+        "Графічний дизайнер",
+        "Продуктовий дизайнер",
+        "Продакт-дизайнер",
+        "UX-дизайнер",
+        "UI дизайнер",
+        "Дизайнер інтерфейсів",
     ]
     for title in kept:
         assert scrapers.is_relevant(title), title
 
 
 def test_is_relevant_drops_unrelated_titles():
-    dropped = ["Backend Engineer", "Motion Designer", "Brand Designer", ""]
+    dropped = [
+        "Backend Engineer",
+        "Motion Designer",
+        "Brand Designer",
+        "Дизайнер",  # bare "designer" must not match the Ukrainian rules
+        "Моушн дизайнер",
+        "",
+    ]
     for title in dropped:
         assert not scrapers.is_relevant(title), title
 
