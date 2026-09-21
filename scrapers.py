@@ -23,15 +23,18 @@ DOU_URL = "https://jobs.dou.ua/vacancies/?category=Design"
 DOU_XHR = "https://jobs.dou.ua/vacancies/xhr-load/?category=Design"
 # Djinni scopes its listing by canonical primary-keyword tags, not by title
 # text. "Design" is not one of those tags and returns an unrelated grab-bag
-# (Web, Brand, Motion, Graphic...), so scope to the two tags we actually want:
-# Product Design and UI UX. Both are passed to one basic-search listing so the
+# (Web, Brand, Motion, Graphic...), so scope to the three tags we actually want:
+# Product Design, UI UX and Graphic Design. The Graphic Design tag is itself a
+# grab-bag (Brand, Web, Motion...), so the RELEVANT title filter still trims it
+# to graphic-design roles. All tags are passed to one basic-search listing so the
 # scraper sees the same result set a visitor sees at that URL — including
-# Djinni's default filters, which trim the raw per-tag union (95 at time of
-# writing) down to the ~80 the site shows. Fetching each tag separately would
-# bypass those filters and surface more than the site reports.
+# Djinni's default filters, which trim the raw per-tag union down to what the
+# site shows. Fetching each tag separately would bypass those filters and surface
+# more than the site reports.
 DJINNI_URLS = (
     "https://djinni.co/jobs/?search_type=basic-search"
-    "&primary_keyword=Product%20Design&primary_keyword=UI%20UX",
+    "&primary_keyword=Product%20Design&primary_keyword=UI%20UX"
+    "&primary_keyword=Graphic%20Design",
 )
 
 # Djinni serves 15 vacancies per results page. Once the real results run out on
@@ -40,7 +43,8 @@ DJINNI_URLS = (
 # out of the listing.
 DJINNI_PAGE_SIZE = 15
 
-# Titles we care about: Product Design and UI/UX families.
+# Titles we care about: Product Design, UI/UX and Graphic Design families.
+# "graphic\s*design" also matches "graphic designer" (which contains it).
 RELEVANT = re.compile(
     r"product\s*design"
     r"|ui\s*/?\s*ux"
@@ -48,7 +52,8 @@ RELEVANT = re.compile(
     r"|\bux\s*designer\b"
     r"|\bui\s*designer\b"
     r"|user\s*experience"
-    r"|user\s*interface",
+    r"|user\s*interface"
+    r"|graphic\s*design",
     re.IGNORECASE,
 )
 
