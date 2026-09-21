@@ -47,6 +47,10 @@ jobs:
           # URL above is used instead.
           WORKER_API_KEY: ${{ secrets.WORKER_API_KEY }}
           WORKER_ADMIN_KEY: ${{ secrets.WORKER_ADMIN_KEY }}
+          # Comma-separated chat ids allowed to see the iGaming block. Unset =
+          # everyone sees it (original behaviour); when set, only these ids get
+          # the iGaming block and everyone else gets it folded into Djinni/DOU.
+          IGAMING_CHAT_IDS: ${{ secrets.IGAMING_CHAT_IDS }}
         run: python3 daily_report.py
 
       - name: Open and merge report PR
