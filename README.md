@@ -1,6 +1,6 @@
 # job-searcher
 
-**A twice-daily Telegram digest of fresh Product Design and UI/UX jobs — scraped
+**A twice-daily Telegram digest of fresh Product Design, UI/UX and Graphic Design jobs — scraped
 from [DOU](https://jobs.dou.ua/vacancies/?category=Design) and
 [Djinni](https://djinni.co/jobs/?search_type=basic-search&primary_keyword=Product%20Design&primary_keyword=UI%20UX),
 delivered on time.**
@@ -45,7 +45,7 @@ dated file such as
 
 - **Two boards, one digest.** DOU and Djinni are scraped, normalized, and merged
   into a single message split into per-source sections, newest first.
-- **Only what's relevant.** A title filter keeps Product Design and UI/UX roles
+- **Only what's relevant.** A title filter keeps Product Design, UI/UX and Graphic Design roles
   and drops the rest (see [Filter](#filter)).
 - **Only what's fresh.** A rolling three-day window by each board's own posting
   date, so you never re-read yesterday's list.
@@ -69,8 +69,8 @@ dated file such as
 
 Alongside the daily digest, every run records the scanned vacancy total each
 board carried that day — the raw count the board itself shows, before the
-Product Design / UI/UX relevance filter (so DOU's whole Design category and
-Djinni's Product Design + UI/UX tag listing) — and keeps a running time series:
+relevance filter (so DOU's whole Design category and Djinni's Product Design +
+UI/UX + Graphic Design tag listing) — and keeps a running time series:
 
 - **[`data/vacancy_counts.csv`](data/vacancy_counts.csv)** is the source of
   truth — one row per calendar day with the columns `date`, `dou`, `djinni`. A
@@ -183,7 +183,9 @@ gh workflow run "Daily design vacancy report"
 
 ## Filter
 
-The relevance filter (in `scrapers.py`, `RELEVANT`) matches Product Design and
-UI/UX titles: `product design`, `ui/ux`, `ux/ui`, `ux designer`, `ui designer`,
-`user experience`, `user interface`. Adjust that regular expression to widen or
-narrow the report.
+The relevance filter (in `scrapers.py`, `RELEVANT`) matches Product Design,
+UI/UX and Graphic Design titles: `product design`, `ui/ux`, `ux/ui`,
+`ux designer`, `ui designer`, `user experience`, `user interface`,
+`graphic design` (which also catches `graphic designer`). Adjust that regular
+expression to widen or narrow the report. Note the filter is English-only, so
+Ukrainian-titled roles (e.g. «графічний дизайнер») are not matched.

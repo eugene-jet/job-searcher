@@ -22,13 +22,16 @@ def test_is_relevant_keeps_design_titles():
         "UI Designer",
         "User Experience Researcher",
         "User Interface Engineer",
+        "Graphic Designer",
+        "Senior Graphic Designer",
+        "Middle Graphic Design Specialist",
     ]
     for title in kept:
         assert scrapers.is_relevant(title), title
 
 
 def test_is_relevant_drops_unrelated_titles():
-    dropped = ["Backend Engineer", "Graphic Designer", "Motion Designer", ""]
+    dropped = ["Backend Engineer", "Motion Designer", "Brand Designer", ""]
     for title in dropped:
         assert not scrapers.is_relevant(title), title
 
