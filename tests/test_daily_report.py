@@ -43,6 +43,17 @@ def test_is_igaming_negative():
     assert not dr.is_igaming(_vac(title="Product Designer", description="fintech"))
 
 
+def test_is_igaming_handles_none_fields():
+    # Some listings carry location/description/company as None; is_igaming must
+    # not crash on the str.join.
+    assert not dr.is_igaming(
+        _vac(title="Graphic Designer", company=None, location=None, description=None)
+    )
+    assert dr.is_igaming(
+        _vac(title="iGaming Designer", company=None, location=None, description=None)
+    )
+
+
 # --- vac_line --------------------------------------------------------------
 
 def test_vac_line_markdown_with_and_without_source():

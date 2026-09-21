@@ -46,12 +46,14 @@ _IGAMING = re.compile(r"i[\s-]?gaming", re.IGNORECASE)
 
 
 def is_igaming(vac):
+    # Coerce each field with `or ""`: a present-but-None value (some listings
+    # carry location/description as None) would break str.join otherwise.
     text = " ".join(
         (
-            vac.get("title", ""),
-            vac.get("company", ""),
-            vac.get("location", ""),
-            vac.get("description", ""),
+            vac.get("title") or "",
+            vac.get("company") or "",
+            vac.get("location") or "",
+            vac.get("description") or "",
         )
     )
     return bool(_IGAMING.search(text))
