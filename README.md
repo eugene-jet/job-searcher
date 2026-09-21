@@ -184,8 +184,10 @@ gh workflow run "Daily design vacancy report"
 ## Filter
 
 The relevance filter (in `scrapers.py`, `RELEVANT`) matches Product Design,
-UI/UX and Graphic Design titles: `product design`, `ui/ux`, `ux/ui`,
-`ux designer`, `ui designer`, `user experience`, `user interface`,
-`graphic design` (which also catches `graphic designer`). Adjust that regular
-expression to widen or narrow the report. Note the filter is English-only, so
-Ukrainian-titled roles (e.g. «графічний дизайнер») are not matched.
+UI/UX and Graphic Design titles in English and Ukrainian: `product design`,
+`ui/ux`, `ux/ui`, `ux designer`, `ui designer`, `user experience`,
+`user interface`, `graphic design` (which also catches `graphic designer`), plus
+Ukrainian forms such as `графічний дизайнер`, `продуктовий дизайнер`,
+`продакт-дизайнер`, `UX-дизайнер`, `UI-дизайнер` and `дизайнер інтерфейсів`. The
+Ukrainian rules anchor on the specialty word, so a bare `дизайнер` is not
+matched. Adjust that regular expression to widen or narrow the report.

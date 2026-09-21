@@ -43,8 +43,10 @@ DJINNI_URLS = (
 # out of the listing.
 DJINNI_PAGE_SIZE = 15
 
-# Titles we care about: Product Design, UI/UX and Graphic Design families.
-# "graphic\s*design" also matches "graphic designer" (which contains it).
+# Titles we care about: Product Design, UI/UX and Graphic Design families, in
+# English and Ukrainian. "graphic\s*design" also matches "graphic designer"
+# (which contains it). The Ukrainian alternatives anchor on the specialty word so
+# a bare "дизайнер" does not match everything.
 RELEVANT = re.compile(
     r"product\s*design"
     r"|ui\s*/?\s*ux"
@@ -53,7 +55,14 @@ RELEVANT = re.compile(
     r"|\bui\s*designer\b"
     r"|user\s*experience"
     r"|user\s*interface"
-    r"|graphic\s*design",
+    r"|graphic\s*design"
+    # Ukrainian
+    r"|графічн\w*\s*дизайн"  # графічний дизайн(ер)
+    r"|продуктов\w*\s*дизайн"  # продуктовий дизайн(ер)
+    r"|продакт[\s-]*дизайн"  # продакт-дизайнер
+    r"|\bux[\s-]*дизайн"  # UX-дизайнер
+    r"|\bui[\s-]*дизайн"  # UI-дизайнер
+    r"|дизайн\w*\s*інтерфейс",  # дизайн(ер) інтерфейсів
     re.IGNORECASE,
 )
 
