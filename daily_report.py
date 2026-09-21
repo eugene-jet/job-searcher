@@ -327,6 +327,18 @@ def collect_recipients():
     return recipients
 
 
+def igaming_recipients():
+    """Chat ids allowed to see the iGaming block, from ``IGAMING_CHAT_IDS``.
+
+    Empty (the variable unset) means everyone gets the full report with the
+    iGaming block, i.e. the original behaviour. When it lists ids, only those get
+    the iGaming block; everyone else gets a report where iGaming vacancies are
+    folded back into the Djinni/DOU sections.
+    """
+    raw = os.environ.get("IGAMING_CHAT_IDS", "")
+    return {c.strip() for c in raw.split(",") if c.strip()}
+
+
 def deactivate_subscribers(chat_ids):
     """Ask the Worker to retire recipients that blocked the bot or vanished.
 
@@ -409,6 +421,12 @@ def main():
         if not is_igaming(v):
             v["description"] = scrapers.fetch_dou_description(v["url"])
 
+    # Keep the full per-source lists (iGaming included) for the reduced report
+    # variant, which folds iGaming vacancies back into Djinni/DOU with no
+    # separate block.
+    djinni_all = list(djinni)
+    dou_all = list(dou)
+
     # Pull iGaming vacancies out of both source lists into a top block. They
     # keep their source label but are not repeated in the per-source blocks.
     igaming = [v for v in djinni + dou if is_igaming(v)]
@@ -446,10 +464,25 @@ def main():
     if token:
         recipients = collect_recipients()
         if recipients:
-            messages = build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals)
+            # Full report keeps iGaming as its own top block; the reduced report
+            # (built on demand) folds iGaming vacancies back into Djinni/DOU with
+            # no separate block. IGAMING_CHAT_IDS decides who gets which.
+            full_messages = build_telegram_messages(
+                today, cutoff, igaming, djinni, dou, sent_at, totals
+            )
+            reduced_messages = None
+            allow_igaming = igaming_recipients()
             sent = 0
             blocked = []
             for chat_id in recipients:
+                if not allow_igaming or chat_id in allow_igaming:
+                    messages = full_messages
+                else:
+                    if reduced_messages is None:
+                        reduced_messages = build_telegram_messages(
+                            today, cutoff, [], djinni_all, dou_all, sent_at, totals
+                        )
+                    messages = reduced_messages
                 status = _deliver(token, chat_id, messages)
                 if status == "ok":
                     sent += 1

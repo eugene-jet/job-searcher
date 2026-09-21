@@ -411,3 +411,40 @@ def test_deactivate_noop_when_no_ids(monkeypatch):
     monkeypatch.setattr(dr.urllib.request, "urlopen", lambda *a, **k: called.append(1))
     dr.deactivate_subscribers([])
     assert called == []
+
+
+# --- iGaming visibility per recipient --------------------------------------
+
+def test_igaming_recipients_unset_is_empty(monkeypatch):
+    monkeypatch.delenv("IGAMING_CHAT_IDS", raising=False)
+    assert dr.igaming_recipients() == set()
+
+
+def test_igaming_recipients_parses_list(monkeypatch):
+    monkeypatch.setenv("IGAMING_CHAT_IDS", " 172575810 , 42 ")
+    assert dr.igaming_recipients() == {"172575810", "42"}
+
+
+def test_full_report_shows_igaming_block():
+    ig = [_vac(source="djinni", title="Designer", company="iGaming Co")]
+    dj = [_vac(source="djinni", title="Product Designer")]
+    msgs = dr.build_telegram_messages(
+        "2026-09-20", "2026-09-18", ig, dj, [], "20-09-2026 10:00", {}
+    )
+    assert "🟣 iGaming" in "\n".join(msgs)
+
+
+def test_reduced_report_folds_igaming_into_sources():
+    # The reduced variant is built with an empty iGaming list and the full
+    # per-source lists, so the block is gone but the vacancy still shows.
+    dj_all = [
+        _vac(source="djinni", title="Slots Designer", company="iGaming Co"),
+        _vac(source="djinni", title="Product Designer"),
+    ]
+    text = "\n".join(
+        dr.build_telegram_messages(
+            "2026-09-20", "2026-09-18", [], dj_all, [], "20-09-2026 10:00", {}
+        )
+    )
+    assert "🟣 iGaming" not in text
+    assert "Slots Designer" in text
