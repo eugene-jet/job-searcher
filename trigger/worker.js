@@ -417,6 +417,72 @@ async function handleBroadcast(request, env) {
   return json({ recipients: ids.length, sent, blocked: blocked.length });
 }
 
+// Public page showing the digest the bot would send right now, so the same
+// thing /start delivers can be opened as a link and shared. It renders whatever
+// is in KV, which the report refreshes every half hour, and shows the reduced
+// variant — the one a chat outside IGAMING_CHAT_IDS receives — unless the admin
+// key is presented, since the full variant is restricted for a reason.
+//
+// The stored messages are already Telegram HTML (<b>, <a>, <i>), which browsers
+// render as-is; only the line breaks need turning into markup. Nothing is
+// escaped here on purpose: this text was written by the report through an
+// admin-only endpoint, not by a visitor.
+function digestPage(record, variant, messages) {
+  const body = messages.join("\n\n").split("\n").join("<br>\n");
+  const when = record.sent_at ? `Зібрано ${record.sent_at} (Київ)` : "";
+  const stored = record.stored_at
+    ? ` · оновлено ${new Date(record.stored_at).toISOString().slice(11, 16)} UTC`
+    : "";
+  return `<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design вакансії — дайджест</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --fg: #0f172a; --muted: #64748b;
+    --border: #e2e8f0; --accent: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b1220; --card: #131c2e; --fg: #e5edff; --muted: #93a4c3;
+      --border: #24314d; --accent: #5b8cff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 24px 16px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+  .sub a { color: var(--accent); text-decoration: none; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px; overflow-wrap: anywhere;
+  }
+  .card a { color: var(--accent); text-decoration: none; }
+  .card a:hover { text-decoration: underline; }
+  .foot { color: var(--muted); font-size: 12px; margin-top: 16px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Design вакансії</h1>
+  <p class="sub">${when}${stored} · варіант: ${variant} · те саме надсилає <a href="https://t.me/JobsbroBot">@JobsbroBot</a> на /start</p>
+  <div class="card">
+${body}
+  </div>
+  <p class="foot">Оновлюється кожні 30 хвилин, з 9:00 до 23:30 за Києвом.</p>
+</div>
+</body>
+</html>`;
+}
+
+
 // Public dashboard page. Reads /history (aggregate counts only, no chat ids)
 // and draws the subscriber trend. Served at /dashboard with no key so the link
 // can be shared; nothing personal is exposed.
@@ -611,6 +677,28 @@ export default {
     // Served from the edge cache so hammering them does not re-run KV work.
     if (path === "/history") {
       return cachedResponse(request, ctx, 30, async () => json(await history(env)));
+    }
+    // Public, key-free: the digest itself, which carries no personal data — it
+    // is the same list of vacancies the bot posts to anyone who subscribes.
+    // Visitors get the reduced variant; the admin key unlocks the full one.
+    if (path === "/latest") {
+      const record = await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
+      if (!record || !Array.isArray(record.full) || record.full.length === 0) {
+        return new Response("no digest stored yet\n", {
+          status: 503,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        });
+      }
+      const full = authorizedAdmin(request, url, env);
+      const messages = !full && record.reduced ? record.reduced : record.full;
+      return new Response(digestPage(record, full ? "повний" : "звичайний", messages), {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          // Short cache: the digest changes twice an hour at most, and a stale
+          // page for a minute is better than a KV read for every visitor.
+          "Cache-Control": "public, max-age=60",
+        },
+      });
     }
     if (path === "/dashboard") {
       return cachedResponse(
