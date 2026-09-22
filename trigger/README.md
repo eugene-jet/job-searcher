@@ -176,6 +176,7 @@ be shared freely.
 | `/deactivate` | POST | admin | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
 | `/broadcast` | POST | admin | Send one message to every active subscriber: `{"text": "..."}`. |
 | `/digest` | POST | admin | Store the rendered digest for `/start` to serve: `{"date", "sent_at", "full": [...], "reduced": [...] \| null}`. |
+| `/latest` | GET | public | The stored digest as a web page — what `/start` sends. Reduced variant; the admin key shows the full one. |
 | `/history` | GET | public | Daily count snapshots + live current, for the dashboard. |
 | `/dashboard` | GET | public | HTML page charting subscribers over time. |
 
