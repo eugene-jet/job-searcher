@@ -46,8 +46,11 @@ DJINNI_PAGE_SIZE = 15
 # Titles we care about: Product Design, UI/UX and Graphic Design families, in
 # English and Ukrainian. "graphic\s*design" also matches "graphic designer"
 # (which contains it). The Ukrainian alternatives anchor on the specialty word so
-# a bare "дизайнер" does not match everything.
-RELEVANT = re.compile(
+# a bare "дизайнер" does not match everything. The two families are kept as
+# separate patterns because the digest currently ships only the Product
+# Design / UI/UX one (see daily_report._prepare) while the scraper, and the
+# scanned totals it reports, still cover both.
+_PRODUCT_UI_UX = (
     r"product\s*design"
     r"|ui\s*/?\s*ux"
     r"|ux\s*/?\s*ui"
@@ -55,20 +58,34 @@ RELEVANT = re.compile(
     r"|\bui\s*designer\b"
     r"|user\s*experience"
     r"|user\s*interface"
-    r"|graphic\s*design"
     # Ukrainian
-    r"|графічн\w*\s*дизайн"  # графічний дизайн(ер)
     r"|продуктов\w*\s*дизайн"  # продуктовий дизайн(ер)
     r"|продакт[\s-]*дизайн"  # продакт-дизайнер
     r"|\bux[\s-]*дизайн"  # UX-дизайнер
     r"|\bui[\s-]*дизайн"  # UI-дизайнер
-    r"|дизайн\w*\s*інтерфейс",  # дизайн(ер) інтерфейсів
-    re.IGNORECASE,
+    r"|дизайн\w*\s*інтерфейс"  # дизайн(ер) інтерфейсів
 )
+
+_GRAPHIC = (
+    r"graphic\s*design"
+    r"|графічн\w*\s*дизайн"  # графічний дизайн(ер)
+)
+
+RELEVANT = re.compile(_PRODUCT_UI_UX + r"|" + _GRAPHIC, re.IGNORECASE)
+PRODUCT_UI_UX = re.compile(_PRODUCT_UI_UX, re.IGNORECASE)
 
 
 def is_relevant(title):
     return bool(RELEVANT.search(title or ""))
+
+
+def is_product_ui_ux(title):
+    """True for the Product Design / UI/UX subset of :func:`is_relevant`.
+
+    A title that names both families (e.g. "Graphic/UX Designer") still counts as
+    Product Design / UI/UX.
+    """
+    return bool(PRODUCT_UI_UX.search(title or ""))
 
 
 def _build_opener():

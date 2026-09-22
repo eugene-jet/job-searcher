@@ -1,5 +1,6 @@
 """Unit tests for the report-rendering and Telegram-formatting helpers."""
 
+import datetime
 import json
 import urllib.error
 
@@ -52,6 +53,31 @@ def test_is_igaming_handles_none_fields():
     assert dr.is_igaming(
         _vac(title="iGaming Designer", company=None, location=None, description=None)
     )
+
+
+# --- _prepare --------------------------------------------------------------
+
+def test_prepare_drops_graphic_design_vacancies():
+    data = {
+        "djinni": [
+            _vac(title="Product Designer", url="https://x/1"),
+            _vac(title="Graphic Designer", url="https://x/2"),
+        ],
+        "dou": [
+            _vac(title="Графічний дизайнер", source="dou", url="https://x/3"),
+            _vac(title="UX Designer", source="dou", url="https://x/4"),
+        ],
+    }
+    # fast=True keeps the helper offline: no Djinni "Оновлено" or DOU
+    # description fetches.
+    igaming, djinni, dou, djinni_all, dou_all = dr._prepare(
+        data, datetime.date(2026, 9, 10), "2026-09-08", fast=True
+    )
+    assert [v["title"] for v in djinni] == ["Product Designer"]
+    assert [v["title"] for v in dou] == ["UX Designer"]
+    assert [v["title"] for v in djinni_all] == ["Product Designer"]
+    assert [v["title"] for v in dou_all] == ["UX Designer"]
+    assert igaming == []
 
 
 # --- vac_line --------------------------------------------------------------

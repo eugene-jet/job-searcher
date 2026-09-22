@@ -405,7 +405,16 @@ def _prepare(data, today_d, cutoff, fast=False):
                 v["date_posted"] = updated
 
     def window_sorted(source):
-        items = [v for v in data[source] if (v.get("date_posted") or "") >= cutoff]
+        # Graphic-design vacancies are still scraped and still counted in the
+        # scanned totals, but the digest currently ships only the Product
+        # Design / UI/UX family, so they are dropped here. Removing this filter
+        # brings them back.
+        items = [
+            v
+            for v in data[source]
+            if (v.get("date_posted") or "") >= cutoff
+            and scrapers.is_product_ui_ux(v["title"])
+        ]
         # Newest first; alphabetical by title within the same day.
         items.sort(key=lambda x: x["title"].lower())
         items.sort(key=lambda x: x["date_posted"], reverse=True)

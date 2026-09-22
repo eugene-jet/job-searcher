@@ -54,6 +54,26 @@ def test_is_relevant_handles_none():
     assert scrapers.is_relevant(None) is False
 
 
+def test_is_product_ui_ux_excludes_graphic_only_titles():
+    for title in ("Graphic Designer", "Senior Graphic Designer", "Графічний дизайнер"):
+        assert scrapers.is_relevant(title), title
+        assert not scrapers.is_product_ui_ux(title), title
+
+
+def test_is_product_ui_ux_keeps_mixed_and_ui_ux_titles():
+    for title in (
+        "Product Designer",
+        "UI/UX Designer",
+        "Graphic/UX Designer",
+        "Продуктовий дизайнер",
+    ):
+        assert scrapers.is_product_ui_ux(title), title
+
+
+def test_is_product_ui_ux_handles_none():
+    assert scrapers.is_product_ui_ux(None) is False
+
+
 # --- _clean ----------------------------------------------------------------
 
 def test_clean_strips_tags_entities_and_whitespace():
