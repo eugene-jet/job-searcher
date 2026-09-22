@@ -36,6 +36,19 @@ REPORTS_DIR = os.path.join(ROOT, "reports")
 # previous days.
 WINDOW_DAYS = 3
 
+# How far back a posting may have been published and still have its Djinni page
+# opened to look for an "Оновлено" (updated) line. A bump rewrites the date the
+# window is applied to, so the check has to reach past the window itself —
+# otherwise it could only ever confirm vacancies that already qualify. It does
+# not have to reach the whole listing, though: Djinni keeps roughly a month of
+# postings, and checking every one of them cost about 73 page loads per run,
+# four fifths of everything the run requested, repeated on each half-hourly
+# refresh. Fourteen days covers a bump of anything published within a little
+# under five windows, which on a listing Djinni keeps for about a month is a
+# little over half of it, and brings the check down to roughly 40 pages. A
+# posting older than that which gets bumped is missed.
+BUMP_LOOKBACK_DAYS = 14
+
 SOURCE_LABEL = {"dou": "DOU", "djinni": "Djinni"}
 
 # Cloudflare fronts the subscriber Worker and answers the default urllib
@@ -438,7 +451,10 @@ def _prepare(data, today_d, cutoff, fast=False):
     # exposes one so a re-bumped posting resurfaces; keep the published date
     # otherwise. Done before windowing because the update date decides the window.
     if not fast:
+        lookback = (today_d - datetime.timedelta(days=BUMP_LOOKBACK_DAYS)).isoformat()
         for v in data["djinni"]:
+            if (v.get("date_posted") or "") < lookback:
+                continue
             updated = scrapers.fetch_djinni_updated(v["url"], today_d)
             if updated:
                 v["date_posted"] = updated
