@@ -44,6 +44,18 @@ def test_is_igaming_negative():
     assert not dr.is_igaming(_vac(title="Product Designer", description="fintech"))
 
 
+def test_is_igaming_does_not_match_a_word_ending_in_i():
+    # "gaming" preceded by another word is game development, not iGaming; only a
+    # standalone "i" prefix counts.
+    for text in ("AI Gaming", "Xiaomi Gaming", "Sci-Gaming", "Multi gaming platform"):
+        assert not dr.is_igaming(_vac(title="Product Designer", description=text)), text
+
+
+def test_is_igaming_matches_standalone_prefix_after_punctuation():
+    for text in ("UI Designer — iGaming", "Designer (iGaming)"):
+        assert dr.is_igaming(_vac(title=text)), text
+
+
 def test_is_igaming_handles_none_fields():
     # Some listings carry location/description/company as None; is_igaming must
     # not crash on the str.join.
