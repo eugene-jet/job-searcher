@@ -23,18 +23,19 @@ DOU_URL = "https://jobs.dou.ua/vacancies/?category=Design"
 DOU_XHR = "https://jobs.dou.ua/vacancies/xhr-load/?category=Design"
 # Djinni scopes its listing by canonical primary-keyword tags, not by title
 # text. "Design" is not one of those tags and returns an unrelated grab-bag
-# (Web, Brand, Motion, Graphic...), so scope to the three tags we actually want:
-# Product Design, UI UX and Graphic Design. The Graphic Design tag is itself a
-# grab-bag (Brand, Web, Motion...), so the RELEVANT title filter still trims it
-# to graphic-design roles. All tags are passed to one basic-search listing so the
-# scraper sees the same result set a visitor sees at that URL — including
-# Djinni's default filters, which trim the raw per-tag union down to what the
-# site shows. Fetching each tag separately would bypass those filters and surface
-# more than the site reports.
+# (Web, Brand, Motion, Graphic...), so scope to the two tags we actually want:
+# Product Design and UI UX. The Graphic Design tag was listed here as well until
+# the digest narrowed to Product Design / UI/UX; it is left out again so the
+# scanned total this scraper reports — the number the analytics time series
+# plots — keeps counting the same two tags it counted before, rather than
+# stepping up by a tag whose vacancies are no longer sent. Both tags are passed
+# to one basic-search listing so the scraper sees the same result set a visitor
+# sees at that URL — including Djinni's default filters, which trim the raw
+# per-tag union down to what the site shows. Fetching each tag separately would
+# bypass those filters and surface more than the site reports.
 DJINNI_URLS = (
     "https://djinni.co/jobs/?search_type=basic-search"
-    "&primary_keyword=Product%20Design&primary_keyword=UI%20UX"
-    "&primary_keyword=Graphic%20Design",
+    "&primary_keyword=Product%20Design&primary_keyword=UI%20UX",
 )
 
 # Djinni serves 15 vacancies per results page. Once the real results run out on
