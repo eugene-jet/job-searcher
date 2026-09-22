@@ -44,8 +44,11 @@ WORKER_USER_AGENT = "job-searcher-report"
 
 # Vacancies that mention iGaming get pulled into their own block at the top.
 # Djinni descriptions arrive with the listing; DOU descriptions are fetched per
-# vacancy in main() and stashed under "description" before this runs.
-_IGAMING = re.compile(r"i[\s-]?gaming", re.IGNORECASE)
+# vacancy in main() and stashed under "description" before this runs. The
+# leading word boundary matters: without it the pattern also fires on any word
+# ending in "i" that precedes "gaming", so "AI gaming" — an ordinary way to
+# describe a game-development role — would be filed under iGaming.
+_IGAMING = re.compile(r"\bi[\s-]?gaming", re.IGNORECASE)
 
 
 def is_igaming(vac):
