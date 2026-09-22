@@ -25,6 +25,9 @@
 //                       endpoints; the daily report passes it as `?key=...`.
 //   TRIGGER_SECRET      optional; when set, the manual dispatch endpoint
 //                       requires `?key=<TRIGGER_SECRET>`.
+//   IGAMING_CHAT_IDS    optional; the same comma-separated list the report
+//                       reads. Decides which stored variant /start serves.
+//                       Unset means everybody gets the full one.
 //
 // Bindings (in wrangler.toml):
 //   SUBSCRIBERS         KV namespace holding one `sub:<chat_id>` record each.
@@ -114,6 +117,74 @@ async function reply(env, chatId, text) {
   );
 }
 
+// --- Stored digest ---------------------------------------------------------
+//
+// The daily report posts its rendered Telegram messages here (see
+// publish_digest in daily_report.py) and /start serves them straight from KV.
+// Answering a /start by dispatching a workflow run and re-scraping both boards
+// took some twenty seconds; reading a KV key takes a moment. The stored value
+// holds both report variants, because the Worker, not the report, decides which
+// one a given chat may see.
+
+const DIGEST_KEY = "digest:latest";
+// How old the stored digest may get before a /start also kicks off a refresh in
+// the background. The hourly cron normally keeps it younger than this; the
+// debounce covers the gaps, and the runs it starts are capped below.
+const DIGEST_MAX_AGE_SEC = 3600;
+
+async function storeDigest(request, env) {
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return new Response("bad request\n", { status: 400 });
+  }
+  if (!Array.isArray(payload.full) || payload.full.length === 0) {
+    return new Response("digest must carry a non-empty full variant\n", { status: 400 });
+  }
+  const record = {
+    date: payload.date || null,
+    sent_at: payload.sent_at || null,
+    full: payload.full,
+    // Absent when the iGaming block is unrestricted and everybody gets `full`.
+    reduced: Array.isArray(payload.reduced) ? payload.reduced : null,
+    stored_at: new Date().toISOString(),
+  };
+  await env.SUBSCRIBERS.put(DIGEST_KEY, JSON.stringify(record));
+  return json({ stored: true, messages: record.full.length, date: record.date });
+}
+
+// Chat ids allowed to see the iGaming block, mirroring IGAMING_CHAT_IDS on the
+// report side. Unset means everybody sees the full variant.
+function igamingAllowed(env, chatId) {
+  const raw = (env.IGAMING_CHAT_IDS || "").trim();
+  if (!raw) return true;
+  return raw.split(",").map((s) => s.trim()).filter(Boolean).includes(String(chatId));
+}
+
+// Serve the stored digest to one chat. Returns false when there is nothing
+// stored yet, so the caller can fall back to dispatching a live run.
+async function sendStoredDigest(env, chatId) {
+  const record = await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
+  if (!record || !Array.isArray(record.full) || record.full.length === 0) return false;
+  const messages =
+    record.reduced && !igamingAllowed(env, chatId) ? record.reduced : record.full;
+  for (const text of messages) {
+    // One failing chunk should not strand the ones after it, and a chat that
+    // blocked the bot cannot receive the rest either way.
+    if ((await sendTo(env, chatId, text, true)) === "blocked") break;
+  }
+  return true;
+}
+
+// True when the stored digest is missing or older than DIGEST_MAX_AGE_SEC.
+async function digestIsStale(env) {
+  const record = await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
+  if (!record || !record.stored_at) return true;
+  const age = (Date.now() - Date.parse(record.stored_at)) / 1000;
+  return !Number.isFinite(age) || age > DIGEST_MAX_AGE_SEC;
+}
+
 async function subscribe(env, chatId, from) {
   const key = `sub:${chatId}`;
   const existing = await env.SUBSCRIBERS.get(key, "json");
@@ -141,7 +212,7 @@ async function unsubscribe(env, chatId) {
   await env.SUBSCRIBERS.put(key, JSON.stringify(existing));
 }
 
-async function handleWebhook(request, env) {
+async function handleWebhook(request, env, ctx) {
   // Telegram sends the configured secret_token in this header; reject anything
   // that does not carry it, even though the URL already embeds the secret.
   if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.WEBHOOK_SECRET) {
@@ -160,11 +231,24 @@ async function handleWebhook(request, env) {
     if (text === "/start" || text.startsWith("/start ")) {
       await subscribe(env, chatId, msg.from);
       await reply(env, chatId, START_REPLY);
-      // Send a fresh digest scoped to just this chat by dispatching the workflow
-      // with only_chat_id. Rate-limited so repeated /start cannot fan out many
-      // heavy scrapes (one welcome run per chat per 10 minutes).
+      // Serve the digest the last report or refresh run stored, which arrives
+      // in about a second. Rate-limited per chat so a repeated /start cannot be
+      // used to fan out messages.
       if (!(await rateLimited(env, "welcome:" + chatId, 1, 600))) {
-        await dispatch(env, { only_chat_id: chatId });
+        const served = await sendStoredDigest(env, chatId);
+        if (!served) {
+          // Nothing stored yet — the first deploy, or KV cleared. Fall back to
+          // the old path: a live run scoped to this chat.
+          await dispatch(env, { only_chat_id: chatId });
+        } else if (await digestIsStale(env)) {
+          // Served, but past its hour. Warm the next one in the background so
+          // whoever writes next gets something fresher; this chat is already
+          // answered and waits for nothing. Capped in case /start arrives in
+          // bursts while a refresh is still running.
+          if (!(await rateLimited(env, "refresh", 1, 900))) {
+            ctx.waitUntil(dispatch(env, { refresh_only: "true" }));
+          }
+        }
       }
     } else if (text === "/stop" || text.startsWith("/stop ")) {
       await unsubscribe(env, chatId);
@@ -276,17 +360,22 @@ async function handleDeactivate(request, env) {
 // Send one message to one chat, classifying the outcome like the daily report
 // does: "ok", "blocked" (403/400 — user blocked the bot or the chat is gone),
 // or "error" (some other, likely transient failure).
-async function sendTo(env, chatId, text) {
+async function sendTo(env, chatId, text, html = false) {
+  const body = {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+  };
+  // The digest is rendered as Telegram HTML by daily_report.py; without the
+  // parse mode its links and bold headings would arrive as literal tags. The
+  // plain notices this also sends carry no markup and pass either way.
+  if (html) body.parse_mode = "HTML";
   const res = await fetch(
     `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        disable_web_page_preview: true,
-      }),
+      body: JSON.stringify(body),
     },
   );
   if (res.ok) return "ok";
@@ -452,11 +541,23 @@ async function cachedResponse(request, ctx, ttl, produce) {
   return res;
 }
 
+// The two UTC hours that carry the real report; see the crons in wrangler.toml.
+// Every other tick only refreshes the stored digest.
+const REPORT_HOURS = [9, 18];
+
 export default {
   // Fired by the crons declared in wrangler.toml. A successful dispatch returns
   // HTTP 204 with an empty body. It also records the day's subscriber snapshot.
+  //
+  // The report hours dispatch the full run: scrape, send to every subscriber,
+  // commit the report and the analytics row. The hourly ticks in between
+  // dispatch a refresh, which scrapes and updates the stored digest and does
+  // nothing else — no message, no commit, no analytics — so that /start has
+  // something at most an hour old to serve.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(dispatch(env));
+    const hour = new Date(event.scheduledTime).getUTCHours();
+    const inputs = REPORT_HOURS.includes(hour) ? undefined : { refresh_only: "true" };
+    ctx.waitUntil(dispatch(env, inputs));
     ctx.waitUntil(recordSnapshot(env));
   },
 
@@ -467,7 +568,7 @@ export default {
     // Telegram webhook. The path ends in WEBHOOK_SECRET so only Telegram, which
     // was told this URL, can reach it; handleWebhook also checks the header.
     if (env.WEBHOOK_SECRET && path === `/telegram/${env.WEBHOOK_SECRET}`) {
-      return handleWebhook(request, env);
+      return handleWebhook(request, env, ctx);
     }
 
     // Read endpoints: the read key (or the admin key).
@@ -484,6 +585,11 @@ export default {
       if (!authorizedAdmin(request, url, env)) return new Response("forbidden\n", { status: 403 });
       if (request.method !== "POST") return new Response("method not allowed\n", { status: 405 });
       return handleDeactivate(request, env);
+    }
+    if (path === "/digest") {
+      if (!authorizedAdmin(request, url, env)) return new Response("forbidden\n", { status: 403 });
+      if (request.method !== "POST") return new Response("method not allowed\n", { status: 405 });
+      return storeDigest(request, env);
     }
     if (path === "/broadcast") {
       if (!authorizedAdmin(request, url, env)) return new Response("forbidden\n", { status: 403 });

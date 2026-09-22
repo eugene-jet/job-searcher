@@ -464,6 +464,70 @@ def test_deactivate_noop_when_no_ids(monkeypatch):
 
 # --- iGaming visibility per recipient --------------------------------------
 
+# --- publish_digest --------------------------------------------------------
+
+def test_publish_digest_posts_both_variants(monkeypatch):
+    monkeypatch.setenv("DIGEST_URL", "https://worker/digest")
+    monkeypatch.setenv("WORKER_ADMIN_KEY", "admin")
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        captured["auth"] = request.get_header("Authorization")
+        captured["type"] = request.get_header("Content-type")
+        captured["body"] = json.loads(request.data.decode())
+        return _FakeResponse()
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    assert dr.publish_digest("2026-09-22", "22-09-2026 21:00", ["a", "b"], ["a"]) is True
+    assert captured["url"] == "https://worker/digest"
+    assert captured["auth"] == "Bearer admin"
+    assert captured["type"] == "application/json"
+    assert captured["body"] == {
+        "date": "2026-09-22",
+        "sent_at": "22-09-2026 21:00",
+        "full": ["a", "b"],
+        "reduced": ["a"],
+    }
+
+
+def test_publish_digest_carries_a_null_reduced_variant(monkeypatch):
+    # No IGAMING_CHAT_IDS means everybody gets the full variant and the report
+    # never builds a reduced one; the Worker must be told so explicitly.
+    monkeypatch.setenv("DIGEST_URL", "https://worker/digest")
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["body"] = json.loads(request.data.decode())
+        return _FakeResponse()
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    dr.publish_digest("2026-09-22", "21:00", ["a"], None)
+    assert captured["body"]["reduced"] is None
+
+
+def test_publish_digest_noop_when_url_unset(monkeypatch):
+    monkeypatch.delenv("DIGEST_URL", raising=False)
+
+    def boom(*a, **k):
+        raise AssertionError("must not call the network")
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", boom)
+    assert dr.publish_digest("2026-09-22", "21:00", ["a"], None) is False
+
+
+def test_publish_digest_survives_a_failure(monkeypatch):
+    # A stale stored digest is a far smaller problem than a digest that never
+    # goes out, so a failure here is swallowed.
+    monkeypatch.setenv("DIGEST_URL", "https://worker/digest")
+
+    def boom(*a, **k):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", boom)
+    assert dr.publish_digest("2026-09-22", "21:00", ["a"], None) is False
+
+
 def test_igaming_recipients_unset_is_empty(monkeypatch):
     monkeypatch.delenv("IGAMING_CHAT_IDS", raising=False)
     assert dr.igaming_recipients() == set()

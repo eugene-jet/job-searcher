@@ -166,9 +166,10 @@ notification. `TELEGRAM_CHAT_ID` may list several comma-separated destinations
 Optionally the digest can run as a subscription bot: people open
 [@JobsbroBot](https://t.me/JobsbroBot) and press `/start`, and each receives the
 report in their own DM. Pressing `/start` also sends the **current digest right
-away** — the Worker dispatches a one-off, freshly scraped run scoped to just that
-chat (rate-limited to one per chat every 10 minutes), so a new subscriber does
-not wait for the next scheduled run. Subscribers are stored by the Cloudflare
+away** — the Worker serves it from its own storage in about a second, and keeps
+that copy no more than an hour old with an hourly refresh run that scrapes and
+stores but sends nothing (rate-limited to one digest per chat every 10 minutes),
+so a new subscriber neither waits for the next scheduled run nor for a scrape. Subscribers are stored by the Cloudflare
 Worker in [`trigger/`](trigger/), and the report reads the active list (via the
 `SUBSCRIBERS_URL` secret) on top of any static `TELEGRAM_CHAT_ID`, retiring
 anyone who blocked the bot (via `DEACTIVATE_URL`). This is what makes the user

@@ -71,15 +71,31 @@ only push to a fixed chat or channel.
 ### Welcome digest on `/start`
 
 When a chat sends `/start`, the Worker replies with the confirmation and then
-dispatches `daily.yml` with the `only_chat_id` input set to that chat. That run
-scrapes fresh and sends the digest to **only** that chat, so a new subscriber
-sees the current vacancies within a minute instead of waiting for the next
-scheduled run. The welcome run skips analytics, the report file and the
-subscriber fan-out (it leaves no commit), and skips the dependency install for
-speed. It is rate-limited to **one welcome run per chat per 10 minutes**; a
-`/start` inside that window still gets the confirmation reply but no new digest.
-The digest respects the iGaming rule (a non-privileged chat gets the reduced
-variant). See `ONLY_CHAT_ID` in [`daily.yml`](../.github/workflows/daily.yml).
+serves the digest straight from KV, which takes about a second.
+
+That digest is kept ready in advance. The report posts its rendered Telegram
+messages to `/digest` at the end of every run, and an hourly refresh run
+(`refresh_only`, dispatched by the Worker's own cron) re-scrapes and updates the
+stored copy without sending anything to anyone. So a new subscriber normally
+sees vacancies at most an hour old.
+
+If a `/start` finds the stored digest older than an hour anyway — a quiet night,
+a failed refresh — it is still served immediately, and a refresh is dispatched in
+the background for whoever writes next. That background dispatch is capped at one
+per 15 minutes so a burst of `/start` messages cannot pile up runs.
+
+Both report variants are stored, because the Worker decides which one a chat may
+see: set `IGAMING_CHAT_IDS` on the Worker to the same list the report uses, or
+leave it unset and everybody gets the full variant.
+
+If nothing is stored yet — the first deploy, or a cleared namespace — the Worker
+falls back to the old path and dispatches `daily.yml` with `only_chat_id`, which
+scrapes fresh for that one chat and takes about twenty seconds.
+
+`/start` is rate-limited to **one digest per chat per 10 minutes**; a `/start`
+inside that window still gets the confirmation reply but no second digest. See
+`ONLY_CHAT_ID`, `REFRESH_ONLY` and `DIGEST_URL` in
+[`daily.yml`](../.github/workflows/daily.yml).
 
 ### One-time setup
 
@@ -156,6 +172,7 @@ be shared freely.
 | `/stats` | GET | read | Counts: `{"total", "active", "blocked", "stopped"}`. |
 | `/deactivate` | POST | admin | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
 | `/broadcast` | POST | admin | Send one message to every active subscriber: `{"text": "..."}`. |
+| `/digest` | POST | admin | Store the rendered digest for `/start` to serve: `{"date", "sent_at", "full": [...], "reduced": [...] \| null}`. |
 | `/history` | GET | public | Daily count snapshots + live current, for the dashboard. |
 | `/dashboard` | GET | public | HTML page charting subscribers over time. |
 

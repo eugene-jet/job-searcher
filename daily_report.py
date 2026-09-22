@@ -373,6 +373,42 @@ def deactivate_subscribers(chat_ids):
         sys.stderr.write("Subscriber deactivate failed: %s\n" % exc)
 
 
+def publish_digest(today, sent_at, full, reduced):
+    """Store the rendered digest on the Worker so ``/start`` can serve it at once.
+
+    Without this the bot answers ``/start`` by dispatching a whole workflow run
+    and scraping both boards again, which takes some twenty seconds. Posting the
+    finished messages to ``DIGEST_URL`` lets the Worker reply from KV instead.
+
+    ``reduced`` is ``None`` when the iGaming block is unrestricted; the Worker
+    then has only the one variant to serve, which matches what everybody gets.
+    Best-effort, like the other Worker calls: a failure here leaves the stored
+    digest stale but must not disturb the delivery that follows.
+    """
+    url = os.environ.get("DIGEST_URL")
+    if not url:
+        return False
+    key = os.environ.get("WORKER_ADMIN_KEY") or os.environ.get("WORKER_API_KEY")
+    payload = {
+        "date": today,
+        "sent_at": sent_at,
+        "full": full,
+        "reduced": reduced,
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers=_worker_headers(key, {"Content-Type": "application/json"}),
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            resp.read()
+    except Exception as exc:  # noqa: BLE001 - the digest must still go out
+        sys.stderr.write("Digest publish failed: %s\n" % exc)
+        return False
+    return True
+
+
 def select_messages(chat_id, allow_igaming, full, reduced):
     """Pick the report variant for a recipient.
 
@@ -486,6 +522,27 @@ def main():
         )
         return full, reduced
 
+    # Refresh run: keep the digest the Worker serves on /start warm, and do
+    # nothing else. It sends no Telegram message, writes no report file and
+    # records no analytics row — in particular the CSV is left alone, so the
+    # time series keeps one deliberate reading per day instead of drifting to
+    # whichever hour ran last. Triggered hourly by the Worker's cron, and on
+    # demand when a /start finds the stored digest stale.
+    if os.environ.get("REFRESH_ONLY", "").strip():
+        full, reduced = variants()
+        published = publish_digest(today, sent_at, full, reduced)
+        print(
+            "Refresh %s | iGaming %d | Djinni %d | DOU %d | %d message(s)"
+            % (
+                "published" if published else "NOT published",
+                len(igaming),
+                len(djinni),
+                len(dou),
+                len(full),
+            )
+        )
+        return 0
+
     # Welcome digest: a single /start-triggered run that sends a fresh digest to
     # just one chat. It skips analytics, the report file and the subscriber
     # fan-out, so it leaves no daily-report commit and no analytics rows behind.
@@ -548,6 +605,9 @@ def main():
             # folds iGaming vacancies back into Djinni/DOU. IGAMING_CHAT_IDS
             # decides who gets which (see select_messages).
             full, reduced = variants()
+            # Refresh what /start serves before fanning out: the messages about
+            # to be delivered are exactly the ones a new subscriber should get.
+            publish_digest(today, sent_at, full, reduced)
             sent = 0
             blocked = []
             for chat_id in recipients:
