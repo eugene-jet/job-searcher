@@ -1,6 +1,6 @@
 # job-searcher
 
-**A twice-daily Telegram digest of fresh Product Design, UI/UX and Graphic Design jobs — scraped
+**A twice-daily Telegram digest of fresh Product Design and UI/UX jobs — scraped
 from [DOU](https://jobs.dou.ua/vacancies/?category=Design) and
 [Djinni](https://djinni.co/jobs/?search_type=basic-search&primary_keyword=Product%20Design&primary_keyword=UI%20UX),
 delivered on time.**
@@ -33,8 +33,8 @@ dated file such as
 >
 > **🟠 Djinni (4)**
 > ⦿ 08-09-2026
-> • Graphic Designer/UX Designer — Invictus
-> • Senior Graphic Designer/UX Designer — Invictus
+> • UX Designer — Invictus
+> • Senior Product Designer — Invictus
 >
 > **🟢 DOU (9)**
 > ⦿ 09-09-2026
@@ -46,7 +46,7 @@ dated file such as
 
 - **Two boards, one digest.** DOU and Djinni are scraped, normalized, and merged
   into a single message split into per-source sections, newest first.
-- **Only what's relevant.** A title filter keeps Product Design, UI/UX and Graphic Design roles
+- **Only what's relevant.** A title filter keeps Product Design and UI/UX roles
   and drops the rest (see [Filter](#filter)).
 - **Only what's fresh.** A rolling three-day window by each board's own posting
   date, so you never re-read yesterday's list.
@@ -195,3 +195,11 @@ Ukrainian forms such as `графічний дизайнер`, `продукто
 `продакт-дизайнер`, `UX-дизайнер`, `UI-дизайнер` and `дизайнер інтерфейсів`. The
 Ukrainian rules anchor on the specialty word, so a bare `дизайнер` is not
 matched. Adjust that regular expression to widen or narrow the report.
+
+The digest itself is currently narrower than the scraper. `RELEVANT` is built
+from two patterns — `PRODUCT_UI_UX` and the graphic-design one — and
+`daily_report._prepare` keeps only the titles matching `PRODUCT_UI_UX`, so
+graphic-design vacancies are scraped and counted in the scanned totals but are
+not sent out. A title naming both families (`Graphic/UX Designer`) still counts
+as UI/UX and is sent. Dropping that filter in `_prepare` restores the
+graphic-design roles to the digest.
