@@ -16,6 +16,15 @@ on:
         description: "Send a one-off welcome digest to only this chat id"
         required: false
         default: ""
+      # When set, the run only refreshes the digest the Worker serves on
+      # /start: it scrapes, posts the rendered messages to DIGEST_URL and
+      # stops. No Telegram delivery, no report file, no analytics row, no PR.
+      # Dispatched hourly by the Worker's cron, and on demand when a /start
+      # finds the stored digest older than an hour.
+      refresh_only:
+        description: "Only refresh the stored digest, send nothing"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -38,10 +47,11 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      # A welcome run (only_chat_id set) never touches analytics/openpyxl, so it
-      # needs no third-party deps — skip the install for a faster reply.
+      # Neither a welcome run (only_chat_id) nor a refresh run (refresh_only)
+      # touches analytics/openpyxl, so neither needs third-party deps — skip the
+      # install to keep both quick.
       - name: Install dependencies
-        if: github.event.inputs.only_chat_id == ''
+        if: github.event.inputs.only_chat_id == '' && github.event.inputs.refresh_only == ''
         run: pip install -r requirements.txt
 
       - name: Generate report and send to Telegram
@@ -65,9 +75,15 @@ jobs:
           IGAMING_CHAT_IDS: ${{ secrets.IGAMING_CHAT_IDS }}
           # Set by the /start webhook: send a fresh digest to only this chat.
           ONLY_CHAT_ID: ${{ github.event.inputs.only_chat_id }}
+          # Where the rendered digest is stored for the bot to serve on /start
+          # (the Worker's /digest endpoint), and the flag that makes a run do
+          # only that. Authorised with WORKER_ADMIN_KEY, as /deactivate is.
+          DIGEST_URL: ${{ secrets.DIGEST_URL }}
+          REFRESH_ONLY: ${{ github.event.inputs.refresh_only }}
         run: python3 daily_report.py
 
       - name: Open and merge report PR
+        if: github.event.inputs.refresh_only == ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
