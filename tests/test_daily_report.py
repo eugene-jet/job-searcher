@@ -464,6 +464,38 @@ def test_deactivate_noop_when_no_ids(monkeypatch):
 
 # --- iGaming visibility per recipient --------------------------------------
 
+# --- _prepare bump lookback ------------------------------------------------
+
+def test_prepare_only_checks_bumps_within_the_lookback(monkeypatch):
+    # The "Оновлено" check opens one page per vacancy, so it is limited to
+    # postings recent enough that a bump could bring them into the window.
+    today = datetime.date(2026, 9, 22)
+    fresh = _vac(title="Product Designer", url="https://x/fresh", date_posted="2026-09-20")
+    midway = _vac(title="UX Designer", url="https://x/midway", date_posted="2026-09-15")
+    ancient = _vac(title="UI Designer", url="https://x/ancient", date_posted="2026-08-20")
+    asked = []
+
+    def fake_updated(url, today_d=None):
+        asked.append(url)
+        return None
+
+    monkeypatch.setattr(dr.scrapers, "fetch_djinni_updated", fake_updated)
+    monkeypatch.setattr(dr.scrapers, "fetch_dou_description", lambda url: "")
+    dr._prepare({"djinni": [fresh, midway, ancient], "dou": []}, today, "2026-09-20")
+    assert asked == ["https://x/fresh", "https://x/midway"]
+
+
+def test_prepare_bump_pulls_an_older_vacancy_into_the_window(monkeypatch):
+    today = datetime.date(2026, 9, 22)
+    bumped = _vac(title="Product Designer", url="https://x/bumped", date_posted="2026-09-16")
+
+    monkeypatch.setattr(dr.scrapers, "fetch_djinni_updated", lambda url, today_d=None: "2026-09-22")
+    monkeypatch.setattr(dr.scrapers, "fetch_dou_description", lambda url: "")
+    _, djinni, _, _, _ = dr._prepare({"djinni": [bumped], "dou": []}, today, "2026-09-20")
+    assert [v["title"] for v in djinni] == ["Product Designer"]
+    assert djinni[0]["date_posted"] == "2026-09-22"
+
+
 # --- publish_digest --------------------------------------------------------
 
 def test_publish_digest_posts_both_variants(monkeypatch):
