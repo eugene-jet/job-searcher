@@ -6,15 +6,20 @@ compatibility_date = "2025-01-01"
 # 18:00 UTC = 21:00 Europe/Kyiv (summer). Cloudflare cron is UTC-only, just like
 # GitHub's schedule, so the wall-clock time shifts by an hour across DST exactly
 # as it did before — the only thing that changes is punctuality.
-# The 9:00 and 18:00 ticks dispatch the real report. The third expression
-# dispatches an hourly refresh instead, which only updates the digest the bot
-# serves on /start; see scheduled() in worker.js. Its range covers 6:00-20:00
-# UTC (9:00-23:00 Europe/Kyiv) with 9 and 18 cut out, because two expressions
-# matching the same minute fire scheduled() twice and the report would go out
-# to every subscriber twice over. Nights are left out as well: vacancies are
-# not posted at 04:00, and an idle refresh would scrape both boards for nobody.
+# One expression for every tick: on the hour and on the half hour, from 6:00 to
+# 20:00 UTC, which is 9:00 to 23:00 Europe/Kyiv. That is 30 ticks a day, of
+# which scheduled() in worker.js turns two — 9:00 and 18:00 UTC exactly — into
+# the real report and the other 28 into a refresh that only updates the digest
+# the bot serves on /start.
+#
+# Deliberately a single expression. Two expressions that match the same minute
+# fire scheduled() twice, and on a report minute that means the digest goes out
+# to every subscriber twice over; with one expression the case cannot arise.
+#
+# Nights are left out: vacancies are not posted at 04:00, and an idle refresh
+# would scrape both boards for nobody.
 [triggers]
-crons = ["0 9 * * *", "0 18 * * *", "0 6-8,10-17,19-20 * * *"]
+crons = ["0,30 6-20 * * *"]
 
 # Holds the bot's subscriber list (one `sub:<chat_id>` record each). Create the
 # namespace once with `wrangler kv namespace create SUBSCRIBERS` and paste the

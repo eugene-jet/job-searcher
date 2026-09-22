@@ -128,9 +128,10 @@ async function reply(env, chatId, text) {
 
 const DIGEST_KEY = "digest:latest";
 // How old the stored digest may get before a /start also kicks off a refresh in
-// the background. The hourly cron normally keeps it younger than this; the
-// debounce covers the gaps, and the runs it starts are capped below.
-const DIGEST_MAX_AGE_SEC = 3600;
+// the background. Matches the half-hourly cron, so the debounce fires only when
+// a tick was missed or the day's first /start lands before 9:00 Kyiv. The runs
+// it starts are capped below.
+const DIGEST_MAX_AGE_SEC = 1800;
 
 async function storeDigest(request, env) {
   let payload;
@@ -541,22 +542,26 @@ async function cachedResponse(request, ctx, ttl, produce) {
   return res;
 }
 
-// The two UTC hours that carry the real report; see the crons in wrangler.toml.
-// Every other tick only refreshes the stored digest.
+// The two UTC hours that carry the real report, on the hour exactly; see the
+// cron in wrangler.toml. Every other tick only refreshes the stored digest.
 const REPORT_HOURS = [9, 18];
 
 export default {
   // Fired by the crons declared in wrangler.toml. A successful dispatch returns
   // HTTP 204 with an empty body. It also records the day's subscriber snapshot.
   //
-  // The report hours dispatch the full run: scrape, send to every subscriber,
-  // commit the report and the analytics row. The hourly ticks in between
-  // dispatch a refresh, which scrapes and updates the stored digest and does
-  // nothing else — no message, no commit, no analytics — so that /start has
-  // something at most an hour old to serve.
+  // Two ticks a day dispatch the full run: scrape, send to every subscriber,
+  // commit the report and the analytics row. The other 28 dispatch a refresh,
+  // which scrapes and updates the stored digest and does nothing else — no
+  // message, no commit, no analytics — so that /start always has something at
+  // most half an hour old to serve.
+  //
+  // The minute is part of the test, not only the hour: ticks land on the hour
+  // and on the half hour, and 9:30 is a refresh even though 9:00 is a report.
   async scheduled(event, env, ctx) {
-    const hour = new Date(event.scheduledTime).getUTCHours();
-    const inputs = REPORT_HOURS.includes(hour) ? undefined : { refresh_only: "true" };
+    const at = new Date(event.scheduledTime);
+    const isReport = at.getUTCMinutes() === 0 && REPORT_HOURS.includes(at.getUTCHours());
+    const inputs = isReport ? undefined : { refresh_only: "true" };
     ctx.waitUntil(dispatch(env, inputs));
     ctx.waitUntil(recordSnapshot(env));
   },

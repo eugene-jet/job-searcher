@@ -74,15 +74,18 @@ When a chat sends `/start`, the Worker replies with the confirmation and then
 serves the digest straight from KV, which takes about a second.
 
 That digest is kept ready in advance. The report posts its rendered Telegram
-messages to `/digest` at the end of every run, and an hourly refresh run
-(`refresh_only`, dispatched by the Worker's own cron) re-scrapes and updates the
-stored copy without sending anything to anyone. So a new subscriber normally
-sees vacancies at most an hour old.
+messages to `/digest` at the end of every run, and a refresh run (`refresh_only`,
+dispatched by the Worker's own cron) re-scrapes and updates the stored copy
+without sending anything to anyone. The cron ticks every half hour from 9:00 to
+23:30 Kyiv — 30 ticks a day, of which two are the real report (12:00 and 21:00)
+and 28 are refreshes — so a new subscriber normally sees vacancies at most half
+an hour old.
 
-If a `/start` finds the stored digest older than an hour anyway — a quiet night,
-a failed refresh — it is still served immediately, and a refresh is dispatched in
-the background for whoever writes next. That background dispatch is capped at one
-per 15 minutes so a burst of `/start` messages cannot pile up runs.
+If a `/start` finds the stored digest older than half an hour anyway — before the
+day's first tick, or after a failed refresh — it is still served immediately, and
+a refresh is dispatched in the background for whoever writes next. That
+background dispatch is capped at one per 15 minutes so a burst of `/start`
+messages cannot pile up runs.
 
 Both report variants are stored, because the Worker decides which one a chat may
 see: set `IGAMING_CHAT_IDS` on the Worker to the same list the report uses, or
