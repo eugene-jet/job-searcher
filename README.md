@@ -71,7 +71,7 @@ dated file such as
 Alongside the daily digest, every run records the scanned vacancy total each
 board carried that day — the raw count the board itself shows, before the
 relevance filter (so DOU's whole Design category and Djinni's Product Design +
-UI/UX + Graphic Design tag listing) — and keeps a running time series:
+UI/UX tag listing) — and keeps a running time series:
 
 - **[`data/vacancy_counts.csv`](data/vacancy_counts.csv)** is the source of
   truth — one row per calendar day with the columns `date`, `dou`, `djinni`. A
@@ -196,10 +196,14 @@ Ukrainian forms such as `графічний дизайнер`, `продукто
 Ukrainian rules anchor on the specialty word, so a bare `дизайнер` is not
 matched. Adjust that regular expression to widen or narrow the report.
 
-The digest itself is currently narrower than the scraper. `RELEVANT` is built
-from two patterns — `PRODUCT_UI_UX` and the graphic-design one — and
-`daily_report._prepare` keeps only the titles matching `PRODUCT_UI_UX`, so
-graphic-design vacancies are scraped and counted in the scanned totals but are
-not sent out. A title naming both families (`Graphic/UX Designer`) still counts
-as UI/UX and is sent. Dropping that filter in `_prepare` restores the
-graphic-design roles to the digest.
+The digest itself is narrower than the scraper. `RELEVANT` is built from two
+patterns — `PRODUCT_UI_UX` and the graphic-design one — and
+`daily_report._prepare` keeps only the titles matching `PRODUCT_UI_UX`. That
+still matters for DOU, whose listing is the board's whole Design category and so
+carries graphic-design titles the digest drops. Djinni is scoped by tag instead,
+and `DJINNI_URLS` asks only for Product Design and UI UX, so graphic-design
+vacancies reach neither the digest nor the scanned total that feeds the
+analytics series. A title naming both families (`Graphic/UX Designer`) counts as
+UI/UX and is sent. Restoring graphic-design roles means putting the
+`Graphic%20Design` tag back in `DJINNI_URLS` and dropping the `PRODUCT_UI_UX`
+filter in `_prepare`.
