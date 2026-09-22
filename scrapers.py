@@ -11,6 +11,7 @@ import datetime
 import http.cookiejar
 import json
 import re
+import time
 import urllib.parse
 import urllib.request
 
@@ -37,6 +38,21 @@ DJINNI_URLS = (
     "https://djinni.co/jobs/?search_type=basic-search"
     "&primary_keyword=Product%20Design&primary_keyword=UI%20UX",
 )
+
+# Pause between consecutive requests to a board. One run opens roughly ninety
+# pages — the two listings, then one page per vacancy to read its "Оновлено"
+# line or its description — and with the digest refreshed every half hour that
+# is a steady, unattended load on somebody else's site. Without a pause the run
+# issues them back to back at over two a second, which is the shape of traffic
+# that trips rate limiting and bot protection, and the boards are reached from
+# shared GitHub runner addresses, so being throttled would not only affect us.
+# Neither board publishes a Crawl-delay, so this is a courtesy, not a rule.
+REQUEST_PAUSE_SEC = 0.25
+
+
+def _pause():
+    time.sleep(REQUEST_PAUSE_SEC)
+
 
 # Djinni serves 15 vacancies per results page. Once the real results run out on
 # a partial page, Djinni appends a further full page of *recommended* vacancies
@@ -222,6 +238,7 @@ def fetch_dou(max_pages=40):
                 "User-Agent": USER_AGENT,
             },
         )
+        _pause()
         with opener.open(req, timeout=30) as resp:
             payload = json.loads(resp.read().decode("utf-8", "replace"))
         batch = _parse_dou_html(payload.get("html", ""))
@@ -255,6 +272,7 @@ def fetch_dou_description(url):
     """
     try:
         opener, _ = _build_opener()
+        _pause()
         with opener.open(url, timeout=20) as resp:
             html = resp.read().decode("utf-8", "replace")
     except Exception:  # noqa: BLE001 - detection is best-effort
@@ -337,6 +355,7 @@ def fetch_djinni(max_pages=20):
         tag_seen = set()
         for page in range(1, max_pages + 1):
             url = "%s&page=%d" % (base, page)
+            _pause()
             with opener.open(url, timeout=30) as resp:
                 html = resp.read().decode("utf-8", "replace")
             page_items = _parse_djinni_ld(html)
@@ -371,6 +390,7 @@ def fetch_djinni_updated(url, today=None):
     today = today or datetime.date.today()
     try:
         opener, _ = _build_opener()
+        _pause()
         with opener.open(url, timeout=20) as resp:
             html = resp.read().decode("utf-8", "replace")
     except Exception:  # noqa: BLE001 - best-effort, fall back to datePosted
