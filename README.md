@@ -13,13 +13,11 @@ browsable history. There are no servers to run and nothing to `pip install`: the
 scraping runs on GitHub Actions, and the punctual twice-a-day schedule is driven
 by a small Cloudflare Worker.
 
-- **📬 Subscribe** — open [@JobsbroBot](https://t.me/JobsbroBot) in Telegram and
+- **Subscribe** — open [@JobsbroBot](https://t.me/JobsbroBot) in Telegram and
   press *Start*. The current digest arrives within seconds, and the twice-daily
   one lands in your direct messages from then on.
-- **📰 Digest** — [read the current digest](https://job-searcher-trigger.evnikmoroz.workers.dev/latest)
+- **Digest** — [read the current digest](https://job-searcher-trigger.evnikmoroz.workers.dev/latest)
   in a browser, no subscription needed. Refreshed every half hour.
-- **📊 Dashboard** — [subscribers over time](https://job-searcher-trigger.evnikmoroz.workers.dev/dashboard),
-  aggregate counts only.
 
 ## Sample output
 
@@ -93,6 +91,12 @@ Both files are committed by the same auto-merged pull request as the Markdown
 report, so the history builds itself. The workbook's document properties are set
 deterministically from the data, so a run whose counts did not change produces no
 spurious binary diff.
+
+The bot's own audience is tracked separately, by the Worker:
+
+- **[Subscriber dashboard](https://job-searcher-trigger.evnikmoroz.workers.dev/dashboard)**
+  — active and total subscribers over time, from one aggregate snapshot a day.
+  It shows counts only, no chat ids, so the link is safe to share.
 
 ## Run it locally
 
