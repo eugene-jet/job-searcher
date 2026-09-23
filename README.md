@@ -13,9 +13,13 @@ browsable history. There are no servers to run and nothing to `pip install`: the
 scraping runs on GitHub Actions, and the punctual twice-a-day schedule is driven
 by a small Cloudflare Worker.
 
-**Subscribe:** open [@JobsbroBot](https://t.me/JobsbroBot) in Telegram and press
-*Start*. You get the current digest within a minute, and the twice-daily digest
-in your own direct messages from then on.
+- **📬 Subscribe** — open [@JobsbroBot](https://t.me/JobsbroBot) in Telegram and
+  press *Start*. The current digest arrives within seconds, and the twice-daily
+  one lands in your direct messages from then on.
+- **📰 Digest** — [read the current digest](https://job-searcher-trigger.evnikmoroz.workers.dev/latest)
+  in a browser, no subscription needed. Refreshed every half hour.
+- **📊 Dashboard** — [subscribers over time](https://job-searcher-trigger.evnikmoroz.workers.dev/dashboard),
+  aggregate counts only.
 
 ## Sample output
 
