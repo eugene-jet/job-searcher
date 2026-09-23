@@ -112,8 +112,8 @@ hours, so they follow daylight saving — 12:00 and 21:00 Kyiv in summer, 11:00 
 
 `/start` is rate-limited to **one digest per chat per 10 minutes**. A `/start`
 inside that window gets no second digest; instead the reply says one was just
-sent, that the limit keeps the bot responsive for everyone, how many minutes
-remain, and when the next scheduled delivery is. See `ONLY_CHAT_ID`,
+sent, that the limit is there to spare the system needless load, and how many
+minutes remain. See `ONLY_CHAT_ID`,
 `REFRESH_ONLY` and `DIGEST_URL` in
 [`daily.yml`](../.github/workflows/daily.yml).
 

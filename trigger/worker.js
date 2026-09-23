@@ -50,31 +50,40 @@ const WELCOME_WINDOW_SEC = 600;
 // reply this replaced promised a digest "in a minute" that then never came.
 function startReply(state, limited, record, now = new Date()) {
   const [first, second] = reportTimesKyiv(now);
+  const welcomeBack =
+    `З поверненням! Підписку відновлено – дайджест знову приходитиме о ${first} і ${second}.`;
   if (limited) {
-    const head =
-      state === "returning"
-        ? "Радий, що ти повернувся! Вакансії знову приходитимуть двічі на день."
-        : "Ти вже з нами 🙂";
-    return (
-      `${head} Дайджест щойно надіслано — він трохи вище в чаті. ` +
-      "Щоб бот встигав швидко відповідати всім, повторно його можна отримати " +
-      `раз на 10 хвилин — спробуй через ${minutesUntilNextWindow(now)} хв. ` +
-      `Або дочекайся регулярної розсилки ${nextReportKyiv(now)}.`
-    );
+    const wait = minutesUntilNextWindow(now);
+    const explain =
+      "Дайджест щойно надіслано, він трохи вище в чаті 😊. " +
+      "Щоб уникати зайвого навантаження на систему, повторно отримати дайджест " +
+      `можна раз на 10 хвилин. Спробуй ще раз через ${wait} ${minutesWord(wait)}.`;
+    // A chat that stops and resubscribes inside the window still deserves to
+    // hear its subscription is back, just without the digest that would follow.
+    return state === "returning" ? `${welcomeBack} ${explain}` : explain;
   }
   if (state === "new") {
     return (
       "Вітаю! Тепер свіжі вакансії Product Design та UI/UX приходитимуть тобі " +
-      `двічі на день, о ${first} і ${second}. Перший дайджест — одразу нижче. ` +
-      "Якщо набридне — /stop."
+      `двічі на день, о ${first} і ${second}. Перший дайджест одразу нижче. ` +
+      "Якщо набридне пиши /stop."
     );
   }
   if (state === "returning") {
-    return "Радий, що ти повернувся! Вакансії знову приходитимуть двічі на день. Ось що є зараз.";
+    return `${welcomeBack} Ось актуальний.`;
   }
   // sent_at is stored as "dd-mm-yyyy HH:MM" (Kyiv); the clock is its tail.
   const at = record && record.sent_at ? `, зібраний о ${record.sent_at.slice(-5)}` : "";
-  return `Ти вже з нами 🙂 Тримай свіжий дайджест${at}. Регулярні — о ${first} і ${second}.`;
+  return `Ти вже з нами 🙂 Тримай свіжий дайджест${at}. Регулярні о ${first} і ${second}.`;
+}
+
+// "хвилину", "хвилини" or "хвилин" for a count after "через": Ukrainian picks
+// the form from the last digit, except that 11-14 always take "хвилин".
+function minutesWord(n) {
+  const tens = n % 100, last = n % 10;
+  if (last === 1 && tens !== 11) return "хвилину";
+  if (last >= 2 && last <= 4 && (tens < 12 || tens > 14)) return "хвилини";
+  return "хвилин";
 }
 
 const KYIV_CLOCK = new Intl.DateTimeFormat("uk-UA", {
@@ -83,7 +92,6 @@ const KYIV_CLOCK = new Intl.DateTimeFormat("uk-UA", {
   minute: "2-digit",
   hourCycle: "h23",
 });
-const KYIV_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" });
 
 // The report hours as a Kyiv wall clock on the given day. Derived from the UTC
 // REPORT_HOURS rather than written out, because the cron is UTC and the Kyiv
@@ -92,21 +100,6 @@ const KYIV_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" });
 function reportTimesKyiv(now) {
   const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
   return REPORT_HOURS.map((h) => KYIV_CLOCK.format(new Date(Date.UTC(y, m, d, h))));
-}
-
-// "о 21:00" when the next report is later today in Kyiv, "завтра о 12:00" when
-// it falls on the next Kyiv day.
-function nextReportKyiv(now) {
-  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
-  let next = null;
-  for (const offset of [0, 1]) {
-    for (const h of REPORT_HOURS) {
-      const t = new Date(Date.UTC(y, m, d + offset, h));
-      if (t > now && !next) next = t;
-    }
-  }
-  const clock = KYIV_CLOCK.format(next);
-  return KYIV_DATE.format(next) === KYIV_DATE.format(now) ? `о ${clock}` : `завтра о ${clock}`;
 }
 
 // Whole minutes until the rate-limit window rolls over. rateLimited() uses
