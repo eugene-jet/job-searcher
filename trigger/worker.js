@@ -52,16 +52,38 @@ const WELCOME_WINDOW_SEC = 600;
 // consistent KV, so it is soft — enough to stop repeated presses, which is its
 // whole job.
 //
-// `force` lets the digest through regardless and still records it, so the span
-// restarts from this send. /start passes it for a chat returning after /stop.
-async function welcomeWait(env, chatId, now = Date.now(), force = false) {
+// `returning` marks a chat coming back after /stop. It has just chosen to
+// subscribe again, and the digest is what shows that worked, so it may have one
+// inside the span — but only once: the send is recorded as that one-off, and a
+// second return inside the new span waits like anyone else. Toggling /stop and
+// /start as fast as one likes therefore still yields at most two digests in
+// any ten minutes, one ordinary and one for returning.
+async function welcomeWait(env, chatId, now = Date.now(), returning = false) {
   const key = `welcome:${chatId}`;
-  const last = Number(await env.SUBSCRIBERS.get(key)) || 0;
+  const { at: last, returned } = parseWelcome(await env.SUBSCRIBERS.get(key));
   const remaining = last + WELCOME_WINDOW_SEC * 1000 - now;
-  if (remaining > 0 && !force) return Math.max(1, Math.ceil(remaining / 60000));
+  const oneOff = remaining > 0 && returning && !returned;
+  if (remaining > 0 && !oneOff) return Math.max(1, Math.ceil(remaining / 60000));
   // Kept a minute past the span; KV will not expire anything sooner than 60 s.
-  await env.SUBSCRIBERS.put(key, String(now), { expirationTtl: WELCOME_WINDOW_SEC + 60 });
+  await env.SUBSCRIBERS.put(key, JSON.stringify({ at: now, returned: oneOff }), {
+    expirationTtl: WELCOME_WINDOW_SEC + 60,
+  });
   return 0;
+}
+
+// The stored `welcome:` value: when the last digest went out, and whether it
+// was the one-off for a returning chat. A bare number is the earlier format,
+// written before the one-off existed; it expires within minutes of deploy, but
+// reads correctly meanwhile.
+function parseWelcome(raw) {
+  if (!raw) return { at: 0, returned: false };
+  try {
+    const v = JSON.parse(raw);
+    if (v && typeof v === "object") return { at: Number(v.at) || 0, returned: Boolean(v.returned) };
+    return { at: Number(v) || 0, returned: false };
+  } catch {
+    return { at: 0, returned: false };
+  }
 }
 
 // The reply to /start, worded for where the chat stands. `state` comes from
@@ -75,6 +97,17 @@ function startReply(state, waitMin, record, now = new Date()) {
   const [first, second] = reportTimesKyiv(now);
   if (waitMin > 0) {
     // "хв" rather than the full word, so the count needs no plural form.
+    if (state === "returning") {
+      // A returning chat only waits when it already had its one-off digest
+      // inside this span, i.e. it has been toggling /stop and /start. The
+      // subscription is restored all the same; the reply says so, and why no
+      // digest follows. Phrased without gendered verb forms.
+      return (
+        "Підписку знову відновлено 🙂 Схоже, вона кілька разів поспіль вмикалась " +
+        `і вимикалась, тож новий дайджест надішлемо через ${waitMin} хв — ` +
+        "попередній уже вище в чаті 🤖"
+      );
+    }
     return (
       "Попередній дайджест уже вище в чаті. Новий можна отримувати раз на 10 хв, " +
       `тож чекаємо на тебе через ${waitMin} хв 🤖`
@@ -328,11 +361,8 @@ async function handleWebhook(request, env, ctx) {
       // repeated /start cannot be used to fan out messages. The wait is worked
       // out before replying, because the reply explains it when it applies.
       //
-      // A chat returning after /stop always gets its digest: it has just
-      // chosen to subscribe again, and the digest is what shows that worked.
-      // Alternating /stop and /start could in principle dodge the limit that
-      // way, but only to flood one's own chat, and Telegram already caps a
-      // single chat at about a message a second.
+      // A chat returning after /stop gets its digest even inside the span, once;
+      // see welcomeWait for how repeated toggling is kept in check.
       const waitMin = await welcomeWait(env, chatId, Date.now(), state === "returning");
       const record = waitMin ? null : await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
       await reply(env, chatId, startReply(state, waitMin, record));

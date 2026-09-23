@@ -114,9 +114,15 @@ hours, so they follow daylight saving — 12:00 and 21:00 Kyiv in summer, 11:00 
 from the moment that chat's last digest was sent: a digest at 22:27 permits the
 next at 22:37. A `/start` in between gets no second digest; the reply points to
 the one already in the chat and says how many minutes remain. Pressing again
-while waiting does not push the time back. A chat returning after `/stop` is the
-exception: it always gets the digest along with its welcome back, since it has
-just chosen to subscribe again, and the ten minutes restart from that digest. See `ONLY_CHAT_ID`,
+while waiting does not push the time back.
+
+A chat returning after `/stop` gets the digest with its welcome back even inside
+those ten minutes, since it has just chosen to subscribe again — but only once
+per span, and the span restarts from that digest. A second return inside it
+still restores the subscription, and the reply explains that it has been
+switched off and on several times in a row and when the next digest can come.
+However fast someone toggles `/stop` and `/start`, that caps them at two digests
+in any ten minutes. Subscribing and unsubscribing themselves are never limited. See `ONLY_CHAT_ID`,
 `REFRESH_ONLY` and `DIGEST_URL` in
 [`daily.yml`](../.github/workflows/daily.yml).
 
