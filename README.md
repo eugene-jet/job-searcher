@@ -177,9 +177,15 @@ anyone who blocked the bot (via `DEACTIVATE_URL`). This is what makes the user
 count meaningful — see [`trigger/README.md`](trigger/README.md) for the setup and
 the `/stats` endpoint that reports how many people use the bot.
 
+The digest itself is also readable as a web page, at
+**[/latest](https://job-searcher-trigger.evnikmoroz.workers.dev/latest)** — the
+same vacancies the bot sends on `/start`, refreshed every half hour, so the link
+can be opened or passed on without subscribing.
+
 A shareable **[dashboard](https://job-searcher-trigger.evnikmoroz.workers.dev/dashboard)**
-charts active and total subscribers over time. It shows only aggregate counts
-(no chat ids), so the link is safe to share.
+charts active and total subscribers over time. Both pages show only what any
+subscriber would see — vacancies on one, aggregate counts with no chat ids on the
+other — so the links are safe to share.
 
 Trigger a run by hand any time from the Actions tab (**Run workflow**) or with:
 
