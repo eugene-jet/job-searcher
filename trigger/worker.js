@@ -73,9 +73,10 @@ function startReply(state, waitMin, record, now = new Date()) {
   const welcomeBack =
     `З поверненням! Підписку відновлено – дайджест знову приходитиме о ${first} і ${second}.`;
   if (waitMin > 0) {
+    // "хв" rather than the full word, so the count needs no plural form.
     const explain =
-      "Попередній дайджест вже в чаті (трохи вище!). " +
-      `Дай нам ще ${waitMin} ${minutesWord(waitMin)}, щоб зібрати для тебе свіженький 🤖`;
+      "Попередній дайджест уже вище в чаті. Новий можна отримувати раз на 10 хв, " +
+      `тож чекаємо на тебе через ${waitMin} хв 🤖`;
     // A chat that stops and resubscribes inside the window still deserves to
     // hear its subscription is back, just without the digest that would follow.
     return state === "returning" ? `${welcomeBack} ${explain}` : explain;
@@ -93,16 +94,6 @@ function startReply(state, waitMin, record, now = new Date()) {
   // sent_at is stored as "dd-mm-yyyy HH:MM" (Kyiv); the clock is its tail.
   const at = record && record.sent_at ? `, зібраний о ${record.sent_at.slice(-5)}` : "";
   return `Ти вже з нами 🙂 Тримай свіжий дайджест${at}. Регулярні о ${first} і ${second}.`;
-}
-
-// "хвилину", "хвилини" or "хвилин" for a count in the accusative ("ще 1
-// хвилину", "ще 3 хвилини", "ще 6 хвилин"): Ukrainian picks the form from the
-// last digit, except that 11-14 always take "хвилин".
-function minutesWord(n) {
-  const tens = n % 100, last = n % 10;
-  if (last === 1 && tens !== 11) return "хвилину";
-  if (last >= 2 && last <= 4 && (tens < 12 || tens > 14)) return "хвилини";
-  return "хвилин";
 }
 
 const KYIV_CLOCK = new Intl.DateTimeFormat("uk-UA", {
