@@ -103,9 +103,18 @@ If nothing is stored yet — the first deploy, or a cleared namespace — the Wo
 falls back to the old path and dispatches `daily.yml` with `only_chat_id`, which
 scrapes fresh for that one chat and takes about twenty seconds.
 
-`/start` is rate-limited to **one digest per chat per 10 minutes**; a `/start`
-inside that window still gets the confirmation reply but no second digest. See
-`ONLY_CHAT_ID`, `REFRESH_ONLY` and `DIGEST_URL` in
+The reply to `/start` depends on where the chat stands: a first subscription
+gets a welcome with the delivery times, a chat that is already subscribed is told
+so and gets the digest with the time it was collected, and a chat returning after
+`/stop` is welcomed back. The delivery times are derived from the cron's UTC
+hours, so they follow daylight saving — 12:00 and 21:00 Kyiv in summer, 11:00 and
+20:00 in winter.
+
+`/start` is rate-limited to **one digest per chat per 10 minutes**. A `/start`
+inside that window gets no second digest; instead the reply says one was just
+sent, that the limit keeps the bot responsive for everyone, how many minutes
+remain, and when the next scheduled delivery is. See `ONLY_CHAT_ID`,
+`REFRESH_ONLY` and `DIGEST_URL` in
 [`daily.yml`](../.github/workflows/daily.yml).
 
 ### One-time setup
