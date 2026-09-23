@@ -110,10 +110,11 @@ so and gets the digest with the time it was collected, and a chat returning afte
 hours, so they follow daylight saving — 12:00 and 21:00 Kyiv in summer, 11:00 and
 20:00 in winter.
 
-`/start` is rate-limited to **one digest per chat per 10 minutes**. A `/start`
-inside that window gets no second digest; instead the reply says one was just
-sent, that the limit is there to spare the system needless load, and how many
-minutes remain. See `ONLY_CHAT_ID`,
+`/start` is rate-limited to **one digest per chat per 10 minutes**, counted
+from the moment that chat's last digest was sent: a digest at 22:27 permits the
+next at 22:37. A `/start` in between gets no second digest; the reply points to
+the one already in the chat and says how many minutes remain. Pressing again
+while waiting does not push the time back. See `ONLY_CHAT_ID`,
 `REFRESH_ONLY` and `DIGEST_URL` in
 [`daily.yml`](../.github/workflows/daily.yml).
 

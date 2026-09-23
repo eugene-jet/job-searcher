@@ -37,27 +37,45 @@ const REPO = "job-searcher";
 const WORKFLOW = "daily.yml";
 const REF = "main";
 
-// How often one chat may be sent the stored digest by /start. Each resend
-// spends a share of the bot's sending capacity, which every chat shares, so a
-// repeated /start inside the window gets an explanation instead of a digest.
+// How long after /start sends a chat the stored digest before it will send
+// that chat another, counted from the moment the last one went out. Each
+// resend spends a share of the bot's sending capacity, which every chat
+// shares, so a repeated /start inside this span gets an explanation instead.
 const WELCOME_WINDOW_SEC = 600;
+
+// Minutes this chat still has to wait before /start may send it another
+// digest; 0 means it may have one now, and in that case the send is recorded
+// here. The span starts when the chat's own last digest was sent, so a digest
+// at 22:27 permits the next at 22:37. The limiter this replaced used windows
+// fixed to the clock, which let 22:29 and 22:30 both through and made "once
+// every ten minutes" untrue. Like that limiter it lives in eventually
+// consistent KV, so it is soft — enough to stop repeated presses, which is its
+// whole job.
+async function welcomeWait(env, chatId, now = Date.now()) {
+  const key = `welcome:${chatId}`;
+  const last = Number(await env.SUBSCRIBERS.get(key)) || 0;
+  const remaining = last + WELCOME_WINDOW_SEC * 1000 - now;
+  if (remaining > 0) return Math.max(1, Math.ceil(remaining / 60000));
+  // Kept a minute past the span; KV will not expire anything sooner than 60 s.
+  await env.SUBSCRIBERS.put(key, String(now), { expirationTtl: WELCOME_WINDOW_SEC + 60 });
+  return 0;
+}
 
 // The reply to /start, worded for where the chat stands. `state` comes from
 // subscribe(): "new" for a first subscription, "active" for a chat that is
 // already subscribed, "returning" for one that had stopped or blocked the bot.
-// `limited` is true when this chat already had a digest inside the current
-// window, in which case none follows and the reply has to say so — the single
-// reply this replaced promised a digest "in a minute" that then never came.
-function startReply(state, limited, record, now = new Date()) {
+// `waitMin` is the minutes left before this chat may have another digest (see
+// welcomeWait); when it is above zero none follows and the reply has to say so
+// — the single reply this replaced promised a digest "in a minute" that then
+// never came.
+function startReply(state, waitMin, record, now = new Date()) {
   const [first, second] = reportTimesKyiv(now);
   const welcomeBack =
     `З поверненням! Підписку відновлено – дайджест знову приходитиме о ${first} і ${second}.`;
-  if (limited) {
-    const wait = minutesUntilNextWindow(now);
+  if (waitMin > 0) {
     const explain =
-      "Дайджест щойно надіслано, він трохи вище в чаті 😊. " +
-      "Щоб уникати зайвого навантаження на систему, повторно отримати дайджест " +
-      `можна раз на 10 хвилин. Спробуй ще раз через ${wait} ${minutesWord(wait)}.`;
+      "Попередній дайджест вже в чаті (трохи вище!). " +
+      `Дай нам ще ${waitMin} ${minutesWord(waitMin)}, щоб зібрати для тебе свіженький 🤖`;
     // A chat that stops and resubscribes inside the window still deserves to
     // hear its subscription is back, just without the digest that would follow.
     return state === "returning" ? `${welcomeBack} ${explain}` : explain;
@@ -77,8 +95,9 @@ function startReply(state, limited, record, now = new Date()) {
   return `Ти вже з нами 🙂 Тримай свіжий дайджест${at}. Регулярні о ${first} і ${second}.`;
 }
 
-// "хвилину", "хвилини" or "хвилин" for a count after "через": Ukrainian picks
-// the form from the last digit, except that 11-14 always take "хвилин".
+// "хвилину", "хвилини" or "хвилин" for a count in the accusative ("ще 1
+// хвилину", "ще 3 хвилини", "ще 6 хвилин"): Ukrainian picks the form from the
+// last digit, except that 11-14 always take "хвилин".
 function minutesWord(n) {
   const tens = n % 100, last = n % 10;
   if (last === 1 && tens !== 11) return "хвилину";
@@ -102,14 +121,6 @@ function reportTimesKyiv(now) {
   return REPORT_HOURS.map((h) => KYIV_CLOCK.format(new Date(Date.UTC(y, m, d, h))));
 }
 
-// Whole minutes until the rate-limit window rolls over. rateLimited() uses
-// fixed windows aligned to the epoch, so the wait ends at the next boundary,
-// not WELCOME_WINDOW_SEC after the last /start; the answer is 1 to 10.
-function minutesUntilNextWindow(now) {
-  const ms = WELCOME_WINDOW_SEC * 1000;
-  const boundary = (Math.floor(now.getTime() / ms) + 1) * ms;
-  return Math.max(1, Math.ceil((boundary - now.getTime()) / 60000));
-}
 
 const STOP_REPLY =
   "Ти відписаний — дайджест більше не надходитиме. Щоб повернутися, надішли /start.";
@@ -320,13 +331,13 @@ async function handleWebhook(request, env, ctx) {
     if (text === "/start" || text.startsWith("/start ")) {
       const state = await subscribe(env, chatId, msg.from);
       // Serve the digest the last report or refresh run stored, which arrives
-      // in about a second — at most once per chat per window, so a repeated
-      // /start cannot be used to fan out messages. The limit is checked before
-      // replying, because the reply explains it when it applies.
-      const limited = await rateLimited(env, "welcome:" + chatId, 1, WELCOME_WINDOW_SEC);
-      const record = limited ? null : await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
-      await reply(env, chatId, startReply(state, limited, record));
-      if (!limited) {
+      // in about a second — at most once per chat per WELCOME_WINDOW_SEC, so a
+      // repeated /start cannot be used to fan out messages. The wait is worked
+      // out before replying, because the reply explains it when it applies.
+      const waitMin = await welcomeWait(env, chatId);
+      const record = waitMin ? null : await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
+      await reply(env, chatId, startReply(state, waitMin, record));
+      if (!waitMin) {
         const served = await sendStoredDigest(env, chatId, record);
         if (!served) {
           // Nothing stored yet — the first deploy, or KV cleared. Fall back to
