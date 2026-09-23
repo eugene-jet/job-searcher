@@ -501,6 +501,7 @@ def test_prepare_bump_pulls_an_older_vacancy_into_the_window(monkeypatch):
 def test_publish_digest_posts_both_variants(monkeypatch):
     monkeypatch.setenv("DIGEST_URL", "https://worker/digest")
     monkeypatch.setenv("WORKER_ADMIN_KEY", "admin")
+    monkeypatch.setenv("IGAMING_CHAT_IDS", " 22, 11 ")
     captured = {}
 
     def fake_urlopen(request, timeout=None):
@@ -520,7 +521,26 @@ def test_publish_digest_posts_both_variants(monkeypatch):
         "sent_at": "22-09-2026 21:00",
         "full": ["a", "b"],
         "reduced": ["a"],
+        # The same list the scheduled delivery uses, so /start cannot drift
+        # from it; normalised the way igaming_recipients reads it.
+        "igaming_chat_ids": ["11", "22"],
     }
+
+
+def test_publish_digest_sends_an_empty_list_when_unrestricted(monkeypatch):
+    # No IGAMING_CHAT_IDS means no restriction; an empty list tells the Worker
+    # exactly that, rather than leaving it to guess from a missing field.
+    monkeypatch.setenv("DIGEST_URL", "https://worker/digest")
+    monkeypatch.delenv("IGAMING_CHAT_IDS", raising=False)
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["body"] = json.loads(request.data.decode())
+        return _FakeResponse()
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    dr.publish_digest("2026-09-22", "21:00", ["a"], None)
+    assert captured["body"]["igaming_chat_ids"] == []
 
 
 def test_publish_digest_carries_a_null_reduced_variant(monkeypatch):

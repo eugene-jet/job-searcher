@@ -25,9 +25,9 @@
 //                       endpoints; the daily report passes it as `?key=...`.
 //   TRIGGER_SECRET      optional; when set, the manual dispatch endpoint
 //                       requires `?key=<TRIGGER_SECRET>`.
-//   IGAMING_CHAT_IDS    optional; the same comma-separated list the report
-//                       reads. Decides which stored variant /start serves.
-//                       Unset means everybody gets the full one.
+//   IGAMING_CHAT_IDS    no longer needed: the report now sends the list with
+//                       the stored digest. Read only as a fallback for a
+//                       digest stored before that, and safe to delete.
 //
 // Bindings (in wrangler.toml):
 //   SUBSCRIBERS         KV namespace holding one `sub:<chat_id>` record each.
@@ -149,18 +149,33 @@ async function storeDigest(request, env) {
     full: payload.full,
     // Absent when the iGaming block is unrestricted and everybody gets `full`.
     reduced: Array.isArray(payload.reduced) ? payload.reduced : null,
+    // The chats allowed the iGaming block, sent by the report from the same
+    // list its scheduled delivery uses. Null when an older report sent none.
+    igaming_chat_ids: Array.isArray(payload.igaming_chat_ids)
+      ? payload.igaming_chat_ids.map(String)
+      : null,
     stored_at: new Date().toISOString(),
   };
   await env.SUBSCRIBERS.put(DIGEST_KEY, JSON.stringify(record));
   return json({ stored: true, messages: record.full.length, date: record.date });
 }
 
-// Chat ids allowed to see the iGaming block, mirroring IGAMING_CHAT_IDS on the
-// report side. Unset means everybody sees the full variant.
-function igamingAllowed(env, chatId) {
-  const raw = (env.IGAMING_CHAT_IDS || "").trim();
-  if (!raw) return true;
-  return raw.split(",").map((s) => s.trim()).filter(Boolean).includes(String(chatId));
+// Whether a chat may see the iGaming block. The list comes with the stored
+// digest, so /start decides exactly as the scheduled delivery did. The Worker
+// once kept its own copy in an IGAMING_CHAT_IDS secret, entered by hand; it
+// drifted from the report's, and /start withheld the block from a chat the
+// scheduled digest showed it to. That secret is now only a fallback for a
+// digest stored by an older report that did not send the list. An empty list
+// means no restriction.
+function igamingAllowed(env, chatId, record) {
+  let ids;
+  if (record && Array.isArray(record.igaming_chat_ids)) {
+    ids = record.igaming_chat_ids;
+  } else {
+    ids = (env.IGAMING_CHAT_IDS || "").split(",");
+  }
+  ids = ids.map((s) => String(s).trim()).filter(Boolean);
+  return ids.length === 0 || ids.includes(String(chatId));
 }
 
 // Serve the stored digest to one chat. Returns false when there is nothing
@@ -169,7 +184,7 @@ async function sendStoredDigest(env, chatId) {
   const record = await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
   if (!record || !Array.isArray(record.full) || record.full.length === 0) return false;
   const messages =
-    record.reduced && !igamingAllowed(env, chatId) ? record.reduced : record.full;
+    record.reduced && !igamingAllowed(env, chatId, record) ? record.reduced : record.full;
   for (const text of messages) {
     // One failing chunk should not strand the ones after it, and a chat that
     // blocked the bot cannot receive the rest either way.

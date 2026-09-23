@@ -88,8 +88,16 @@ background dispatch is capped at one per 15 minutes so a burst of `/start`
 messages cannot pile up runs.
 
 Both report variants are stored, because the Worker decides which one a chat may
-see: set `IGAMING_CHAT_IDS` on the Worker to the same list the report uses, or
-leave it unset and everybody gets the full variant.
+see. It decides with the list of chats allowed the iGaming block that the report
+sends along with the digest — the very `IGAMING_CHAT_IDS` its scheduled delivery
+reads — so `/start` and the twice-daily digest always agree. An empty list means
+no restriction and everybody gets the full variant.
+
+The Worker used to keep its own copy of that list as a secret, entered by hand.
+The two copies drifted, and `/start` withheld the block from a chat the scheduled
+digest showed it to. A Worker secret named `IGAMING_CHAT_IDS` is now read only as
+a fallback for a digest stored before the list travelled with it, and can be
+deleted.
 
 If nothing is stored yet — the first deploy, or a cleared namespace — the Worker
 falls back to the old path and dispatches `daily.yml` with `only_chat_id`, which
