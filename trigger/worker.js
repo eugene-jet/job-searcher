@@ -51,11 +51,14 @@ const WELCOME_WINDOW_SEC = 600;
 // every ten minutes" untrue. Like that limiter it lives in eventually
 // consistent KV, so it is soft — enough to stop repeated presses, which is its
 // whole job.
-async function welcomeWait(env, chatId, now = Date.now()) {
+//
+// `force` lets the digest through regardless and still records it, so the span
+// restarts from this send. /start passes it for a chat returning after /stop.
+async function welcomeWait(env, chatId, now = Date.now(), force = false) {
   const key = `welcome:${chatId}`;
   const last = Number(await env.SUBSCRIBERS.get(key)) || 0;
   const remaining = last + WELCOME_WINDOW_SEC * 1000 - now;
-  if (remaining > 0) return Math.max(1, Math.ceil(remaining / 60000));
+  if (remaining > 0 && !force) return Math.max(1, Math.ceil(remaining / 60000));
   // Kept a minute past the span; KV will not expire anything sooner than 60 s.
   await env.SUBSCRIBERS.put(key, String(now), { expirationTtl: WELCOME_WINDOW_SEC + 60 });
   return 0;
@@ -70,16 +73,12 @@ async function welcomeWait(env, chatId, now = Date.now()) {
 // never came.
 function startReply(state, waitMin, record, now = new Date()) {
   const [first, second] = reportTimesKyiv(now);
-  const welcomeBack =
-    `З поверненням! Підписку відновлено – дайджест знову приходитиме о ${first} і ${second}.`;
   if (waitMin > 0) {
     // "хв" rather than the full word, so the count needs no plural form.
-    const explain =
+    return (
       "Попередній дайджест уже вище в чаті. Новий можна отримувати раз на 10 хв, " +
-      `тож чекаємо на тебе через ${waitMin} хв 🤖`;
-    // A chat that stops and resubscribes inside the window still deserves to
-    // hear its subscription is back, just without the digest that would follow.
-    return state === "returning" ? `${welcomeBack} ${explain}` : explain;
+      `тож чекаємо на тебе через ${waitMin} хв 🤖`
+    );
   }
   if (state === "new") {
     return (
@@ -89,7 +88,10 @@ function startReply(state, waitMin, record, now = new Date()) {
     );
   }
   if (state === "returning") {
-    return `${welcomeBack} Ось актуальний.`;
+    return (
+      `З поверненням! Підписку відновлено – дайджест знову приходитиме о ${first} і ${second}. ` +
+      "Ось актуальний."
+    );
   }
   // sent_at is stored as "dd-mm-yyyy HH:MM" (Kyiv); the clock is its tail.
   const at = record && record.sent_at ? `, зібраний о ${record.sent_at.slice(-5)}` : "";
@@ -325,7 +327,13 @@ async function handleWebhook(request, env, ctx) {
       // in about a second — at most once per chat per WELCOME_WINDOW_SEC, so a
       // repeated /start cannot be used to fan out messages. The wait is worked
       // out before replying, because the reply explains it when it applies.
-      const waitMin = await welcomeWait(env, chatId);
+      //
+      // A chat returning after /stop always gets its digest: it has just
+      // chosen to subscribe again, and the digest is what shows that worked.
+      // Alternating /stop and /start could in principle dodge the limit that
+      // way, but only to flood one's own chat, and Telegram already caps a
+      // single chat at about a message a second.
+      const waitMin = await welcomeWait(env, chatId, Date.now(), state === "returning");
       const record = waitMin ? null : await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
       await reply(env, chatId, startReply(state, waitMin, record));
       if (!waitMin) {
