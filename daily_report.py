@@ -397,6 +397,12 @@ def publish_digest(today, sent_at, full, reduced):
     then has only the one variant to serve, which matches what everybody gets.
     Best-effort, like the other Worker calls: a failure here leaves the stored
     digest stale but must not disturb the delivery that follows.
+
+    The chats allowed the iGaming block travel with the digest, so ``/start``
+    decides with exactly the list the scheduled delivery uses. The Worker used
+    to keep a copy of its own, entered separately, and the two drifted: the
+    scheduled digest showed the block to a chat that ``/start`` then withheld
+    it from. An empty list means no restriction, as it does here.
     """
     url = os.environ.get("DIGEST_URL")
     if not url:
@@ -407,6 +413,7 @@ def publish_digest(today, sent_at, full, reduced):
         "sent_at": sent_at,
         "full": full,
         "reduced": reduced,
+        "igaming_chat_ids": sorted(igaming_recipients()),
     }
     req = urllib.request.Request(
         url,
