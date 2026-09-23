@@ -126,6 +126,32 @@ in any ten minutes. Subscribing and unsubscribing themselves are never limited. 
 `REFRESH_ONLY` and `DIGEST_URL` in
 [`daily.yml`](../.github/workflows/daily.yml).
 
+### Bot replies
+
+Every message the bot sends apart from the digest itself. Parts in *italics* are
+filled in when the reply is sent:
+
+| When | Reply | Digest follows |
+| --- | --- | --- |
+| `/start` — first subscription | Вітаю! Тепер свіжі вакансії Product Design та UI/UX приходитимуть тобі двічі на день, о *12:00* і *21:00*. Перший дайджест одразу нижче. Якщо набридне пиши /stop. | yes |
+| `/start` — already subscribed | Ти вже з нами 🙂 Тримай свіжий дайджест, зібраний о *22:10*. Регулярні о *12:00* і *21:00*. | yes |
+| `/start` — again within 10 minutes of the last digest | Попередній дайджест уже вище в чаті. Новий можна отримувати раз на 10 хв, тож чекаємо на тебе через *6* хв 🤖 | no |
+| `/start` — returning after `/stop` | З поверненням! Підписку відновлено – дайджест знову приходитиме о *12:00* і *21:00*. Ось актуальний. | yes, once per 10 minutes |
+| `/start` — returning again within those 10 minutes | Підписку знову відновлено! Схоже, вона кілька разів поспіль вмикалась і вимикалась 😞. Новий дайджест буде за *8* хв, а попередній вище в чаті | no |
+| `/stop` | Підписку скасовано, дайджест більше не надходитиме 😭. Щоб повернутися, надішли /start. | — |
+| any other text | Я надсилаю дайджест вакансій Product Design та UI/UX. Команди: /start – підписатися, /stop – відписатися | — |
+
+- **Delivery times** come from the cron's UTC report hours, so they follow
+  daylight saving: 12:00 and 21:00 Kyiv in summer, 11:00 and 20:00 in winter.
+- **The collection time** is when the stored digest was built; the clause is
+  left out if that is unknown.
+- **The minutes** are how long remains of the ten counted from the chat's last
+  digest, from 1 to 10.
+
+The replies are defined in [`worker.js`](worker.js) — `startReply()` for the
+`/start` variants, and `STOP_REPLY` and `HELP_REPLY` for the other two. That
+file is the source of truth; change a reply there and update this table with it.
+
 ### One-time setup
 
 1. **Create the KV namespace** that stores the subscriber list, then paste the
