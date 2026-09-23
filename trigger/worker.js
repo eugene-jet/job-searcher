@@ -148,10 +148,10 @@ function reportTimesKyiv(now) {
 
 
 const STOP_REPLY =
-  "Ти відписаний — дайджест більше не надходитиме. Щоб повернутися, надішли /start.";
+  "Підписку скасовано, дайджест більше не надходитиме 😭. Щоб повернутися, надішли /start.";
 const HELP_REPLY =
   "Я надсилаю дайджест вакансій Product Design та UI/UX. " +
-  "Команди: /start — підписатися, /stop — відписатися.";
+  "Команди: /start – підписатися, /stop – відписатися";
 
 async function dispatch(env, inputs) {
   const body = { ref: REF };
