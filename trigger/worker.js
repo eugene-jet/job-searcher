@@ -37,10 +37,80 @@ const REPO = "job-searcher";
 const WORKFLOW = "daily.yml";
 const REF = "main";
 
-const START_REPLY =
-  "Готово! Ти підписаний на дайджест свіжих вакансій Product Design та UI/UX. " +
-  "Він приходитиме двічі на день. Актуальний дайджест надішлю за хвилину. " +
-  "Щоб відписатися — надішли /stop.";
+// How often one chat may be sent the stored digest by /start. Each resend
+// spends a share of the bot's sending capacity, which every chat shares, so a
+// repeated /start inside the window gets an explanation instead of a digest.
+const WELCOME_WINDOW_SEC = 600;
+
+// The reply to /start, worded for where the chat stands. `state` comes from
+// subscribe(): "new" for a first subscription, "active" for a chat that is
+// already subscribed, "returning" for one that had stopped or blocked the bot.
+// `limited` is true when this chat already had a digest inside the current
+// window, in which case none follows and the reply has to say so — the single
+// reply this replaced promised a digest "in a minute" that then never came.
+function startReply(state, limited, record, now = new Date()) {
+  const [first, second] = reportTimesKyiv(now);
+  const welcomeBack =
+    `З поверненням! Підписку відновлено – дайджест знову приходитиме о ${first} і ${second}.`;
+  if (limited) {
+    const wait = minutesUntilNextWindow(now);
+    const explain =
+      "Дайджест щойно надіслано, він трохи вище в чаті 😊. " +
+      "Щоб уникати зайвого навантаження на систему, повторно отримати дайджест " +
+      `можна раз на 10 хвилин. Спробуй ще раз через ${wait} ${minutesWord(wait)}.`;
+    // A chat that stops and resubscribes inside the window still deserves to
+    // hear its subscription is back, just without the digest that would follow.
+    return state === "returning" ? `${welcomeBack} ${explain}` : explain;
+  }
+  if (state === "new") {
+    return (
+      "Вітаю! Тепер свіжі вакансії Product Design та UI/UX приходитимуть тобі " +
+      `двічі на день, о ${first} і ${second}. Перший дайджест одразу нижче. ` +
+      "Якщо набридне пиши /stop."
+    );
+  }
+  if (state === "returning") {
+    return `${welcomeBack} Ось актуальний.`;
+  }
+  // sent_at is stored as "dd-mm-yyyy HH:MM" (Kyiv); the clock is its tail.
+  const at = record && record.sent_at ? `, зібраний о ${record.sent_at.slice(-5)}` : "";
+  return `Ти вже з нами 🙂 Тримай свіжий дайджест${at}. Регулярні о ${first} і ${second}.`;
+}
+
+// "хвилину", "хвилини" or "хвилин" for a count after "через": Ukrainian picks
+// the form from the last digit, except that 11-14 always take "хвилин".
+function minutesWord(n) {
+  const tens = n % 100, last = n % 10;
+  if (last === 1 && tens !== 11) return "хвилину";
+  if (last >= 2 && last <= 4 && (tens < 12 || tens > 14)) return "хвилини";
+  return "хвилин";
+}
+
+const KYIV_CLOCK = new Intl.DateTimeFormat("uk-UA", {
+  timeZone: "Europe/Kyiv",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+// The report hours as a Kyiv wall clock on the given day. Derived from the UTC
+// REPORT_HOURS rather than written out, because the cron is UTC and the Kyiv
+// time moves by an hour across daylight saving: 12:00 and 21:00 in summer,
+// 11:00 and 20:00 in winter. A hard-coded "12:00" would be wrong half the year.
+function reportTimesKyiv(now) {
+  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
+  return REPORT_HOURS.map((h) => KYIV_CLOCK.format(new Date(Date.UTC(y, m, d, h))));
+}
+
+// Whole minutes until the rate-limit window rolls over. rateLimited() uses
+// fixed windows aligned to the epoch, so the wait ends at the next boundary,
+// not WELCOME_WINDOW_SEC after the last /start; the answer is 1 to 10.
+function minutesUntilNextWindow(now) {
+  const ms = WELCOME_WINDOW_SEC * 1000;
+  const boundary = (Math.floor(now.getTime() / ms) + 1) * ms;
+  return Math.max(1, Math.ceil((boundary - now.getTime()) / 60000));
+}
+
 const STOP_REPLY =
   "Ти відписаний — дайджест більше не надходитиме. Щоб повернутися, надішли /start.";
 const HELP_REPLY =
@@ -180,8 +250,8 @@ function igamingAllowed(env, chatId, record) {
 
 // Serve the stored digest to one chat. Returns false when there is nothing
 // stored yet, so the caller can fall back to dispatching a live run.
-async function sendStoredDigest(env, chatId) {
-  const record = await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
+async function sendStoredDigest(env, chatId, stored) {
+  const record = stored !== undefined ? stored : await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
   if (!record || !Array.isArray(record.full) || record.full.length === 0) return false;
   const messages =
     record.reduced && !igamingAllowed(env, chatId, record) ? record.reduced : record.full;
@@ -215,6 +285,9 @@ async function subscribe(env, chatId, from) {
     first_name: (from && from.first_name) || null,
   };
   await env.SUBSCRIBERS.put(key, JSON.stringify(record));
+  // Where the chat stood before this /start, so the reply can match it.
+  if (!existing) return "new";
+  return existing.active ? "active" : "returning";
 }
 
 // Soft unsubscribe: the record is kept (marked inactive) so the stats still
@@ -245,13 +318,16 @@ async function handleWebhook(request, env, ctx) {
     const chatId = String(msg.chat.id);
     const text = msg.text.trim();
     if (text === "/start" || text.startsWith("/start ")) {
-      await subscribe(env, chatId, msg.from);
-      await reply(env, chatId, START_REPLY);
+      const state = await subscribe(env, chatId, msg.from);
       // Serve the digest the last report or refresh run stored, which arrives
-      // in about a second. Rate-limited per chat so a repeated /start cannot be
-      // used to fan out messages.
-      if (!(await rateLimited(env, "welcome:" + chatId, 1, 600))) {
-        const served = await sendStoredDigest(env, chatId);
+      // in about a second — at most once per chat per window, so a repeated
+      // /start cannot be used to fan out messages. The limit is checked before
+      // replying, because the reply explains it when it applies.
+      const limited = await rateLimited(env, "welcome:" + chatId, 1, WELCOME_WINDOW_SEC);
+      const record = limited ? null : await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
+      await reply(env, chatId, startReply(state, limited, record));
+      if (!limited) {
+        const served = await sendStoredDigest(env, chatId, record);
         if (!served) {
           // Nothing stored yet — the first deploy, or KV cleared. Fall back to
           // the old path: a live run scoped to this chat.
