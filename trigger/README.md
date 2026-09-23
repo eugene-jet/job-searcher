@@ -212,6 +212,24 @@ The public `/history` and `/dashboard` responses are served from Cloudflare's
 edge cache (30s and 300s respectively), so hammering them does not re-run the KV
 work on every request. Counts on the dashboard can therefore lag by up to 30s.
 
+### Digest page
+
+The digest the bot serves on `/start` is also readable in a browser at
+[`/latest`](https://job-searcher-trigger.evnikmoroz.workers.dev/latest). It
+renders whatever is currently stored, which the report refreshes every half
+hour, so the link always shows the same vacancies a new subscriber would get.
+
+Visitors see the reduced variant — the one a chat outside `IGAMING_CHAT_IDS`
+receives. Presenting the admin key shows the full one:
+
+```bash
+curl -s -H "Authorization: Bearer <ADMIN_KEY>" \
+  "https://job-searcher-trigger.<your-subdomain>.workers.dev/latest"
+```
+
+No key is needed otherwise, and nothing personal is exposed — the page lists
+vacancies, not subscribers.
+
 ### Dashboard
 
 A shareable page charting active/total subscribers over time lives at
