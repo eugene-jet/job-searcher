@@ -234,9 +234,17 @@ vacancies, not subscribers.
 
 A shareable page charting active/total subscribers over time lives at
 [`/dashboard`](https://job-searcher-trigger.evnikmoroz.workers.dev/dashboard). It
-reads `/history`, which the Worker fills with one aggregate snapshot per day on
-each cron tick, so the chart accrues history from the first run after deploy. No
-key is needed and no chat ids are exposed — only counts.
+reads `/history`, which covers every day since the first subscription.
+
+Days from the time the cron started recording come from the aggregate snapshot
+the Worker stores once a day. Days before that — and any day the cron missed —
+are rebuilt from the dates each subscriber record keeps (`first_seen`,
+`stopped_at`, `blocked_at`), and the chart draws them as hollow points so they
+are not mistaken for measurements. One approximation applies to rebuilt days: a
+chat that stopped and later pressed `/start` again loses its `stopped_at`, so
+its earlier gap does not show.
+
+No key is needed and no chat ids are exposed — only counts.
 
 ## The Worker is the only scheduler
 

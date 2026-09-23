@@ -307,23 +307,64 @@ async function recordSnapshot(env) {
 // point for today is always present so the chart is never empty, even before
 // the day's first cron snapshot has been written.
 async function history(env) {
-  const points = [];
+  const stored = new Map();
   let cursor;
   do {
     const page = await env.SUBSCRIBERS.list({ prefix: "stat:", cursor });
     for (const entry of page.keys) {
       const record = await env.SUBSCRIBERS.get(entry.name, "json");
-      if (record) points.push(record);
+      if (record) stored.set(record.date, record);
     }
     cursor = page.list_complete ? null : page.cursor;
   } while (cursor);
-  points.sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  const records = [];
+  await eachSubscriber(env, (record) => records.push(record));
   const current = await computeStats(env);
   const today = new Date().toISOString().slice(0, 10);
-  if (!points.length || points[points.length - 1].date !== today) {
-    points.push({ date: today, ...current });
+
+  // The stored snapshots only begin on the day the cron first recorded one,
+  // but the subscriber records remember when each chat first subscribed, and
+  // when it stopped or was blocked. So the days before the first snapshot —
+  // and any day the cron happened to miss — are rebuilt from those dates,
+  // back to the first subscription ever. A stored snapshot always wins where
+  // one exists, because it was measured on the day.
+  //
+  // The rebuilt days are an approximation in one respect: a chat that stopped
+  // and later pressed /start again has its stopped_at cleared by subscribe(),
+  // so its earlier gap cannot be seen and it counts as active throughout.
+  // Each rebuilt point is flagged so the chart can draw it differently.
+  const firsts = records.map((r) => (r.first_seen || "").slice(0, 10)).filter(Boolean);
+  const start = [...firsts, ...stored.keys()].sort()[0] || today;
+  const points = [];
+  for (let t = Date.parse(start + "T00:00:00Z"); ; t += 86400000) {
+    const day = new Date(t).toISOString().slice(0, 10);
+    if (day > today) break;
+    if (day === today) {
+      points.push({ date: today, ...current });
+    } else if (stored.has(day)) {
+      points.push(stored.get(day));
+    } else {
+      points.push({ date: day, ...countOn(records, day), reconstructed: true });
+    }
   }
   return { history: points, current };
+}
+
+// Subscriber counts as they stood at the end of `day` (YYYY-MM-DD), derived
+// from the dates kept on each record. Mirrors computeStats: a blocked chat
+// counts as blocked even if it had also stopped.
+function countOn(records, day) {
+  const on = (iso) => Boolean(iso) && iso.slice(0, 10) <= day;
+  const totals = { total: 0, active: 0, blocked: 0, stopped: 0 };
+  for (const r of records) {
+    if (!on(r.first_seen)) continue;
+    totals.total += 1;
+    if (on(r.blocked_at)) totals.blocked += 1;
+    else if (on(r.stopped_at)) totals.stopped += 1;
+    else totals.active += 1;
+  }
+  return totals;
 }
 
 // Mark chats inactive+blocked so they drop out of future sends. Shared by the
@@ -554,17 +595,23 @@ async function load() {
     document.getElementById('total').textContent = cur.total;
     document.getElementById('stopped').textContent = cur.stopped;
     document.getElementById('blocked').textContent = cur.blocked;
-    document.getElementById('foot').textContent = 'Updated ' + new Date().toLocaleString();
+    const rebuilt = hist.filter(function (p) { return p.reconstructed; });
+    document.getElementById('foot').textContent = 'Updated ' + new Date().toLocaleString() +
+      (rebuilt.length
+        ? ' · Hollow points (' + rebuilt[0].date + ' to ' + rebuilt[rebuilt.length - 1].date +
+          ') are rebuilt from subscription dates; filled points were recorded on the day.'
+        : '');
     const labels = hist.map(function (p) { return p.date; });
     const active = hist.map(function (p) { return p.active; });
     const total = hist.map(function (p) { return p.total; });
+    const fill = hist.map(function (p) { return p.reconstructed ? 'transparent' : '#2563eb'; });
     const muted = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
     new Chart(document.getElementById('chart'), {
       type: 'line',
       data: {
         labels: labels,
         datasets: [
-          { label: 'Active', data: active, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.15)', fill: true, tension: .3, pointRadius: 3 },
+          { label: 'Active', data: active, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.15)', fill: true, tension: .3, pointRadius: 3, pointBackgroundColor: fill, pointBorderColor: '#2563eb' },
           { label: 'Total', data: total, borderColor: muted || '#94a3b8', borderDash: [4, 4], fill: false, tension: .3, pointRadius: 0 }
         ]
       },
