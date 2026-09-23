@@ -606,13 +606,16 @@ async function load() {
     const total = hist.map(function (p) { return p.total; });
     const fill = hist.map(function (p) { return p.reconstructed ? 'transparent' : '#2563eb'; });
     const muted = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
+    // Monotone interpolation keeps the curve smooth without overshooting: a
+    // plain tension spline swings past its points, which on a head count draws
+    // dips and peaks — a subscriber lost, then regained — that never happened.
     new Chart(document.getElementById('chart'), {
       type: 'line',
       data: {
         labels: labels,
         datasets: [
-          { label: 'Active', data: active, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.15)', fill: true, tension: .3, pointRadius: 3, pointBackgroundColor: fill, pointBorderColor: '#2563eb' },
-          { label: 'Total', data: total, borderColor: muted || '#94a3b8', borderDash: [4, 4], fill: false, tension: .3, pointRadius: 0 }
+          { label: 'Active', data: active, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.15)', fill: true, tension: .3, cubicInterpolationMode: 'monotone', pointRadius: 3, pointBackgroundColor: fill, pointBorderColor: '#2563eb' },
+          { label: 'Total', data: total, borderColor: muted || '#94a3b8', borderDash: [4, 4], fill: false, tension: .3, cubicInterpolationMode: 'monotone', pointRadius: 0 }
         ]
       },
       options: {
