@@ -103,9 +103,8 @@ function startReply(state, waitMin, record, now = new Date()) {
       // subscription is restored all the same; the reply says so, and why no
       // digest follows. Phrased without gendered verb forms.
       return (
-        "Підписку знову відновлено 🙂 Схоже, вона кілька разів поспіль вмикалась " +
-        `і вимикалась, тож новий дайджест надішлемо через ${waitMin} хв — ` +
-        "попередній уже вище в чаті 🤖"
+        "Підписку знову відновлено! Схоже, вона кілька разів поспіль вмикалась " +
+        `і вимикалась 😞. Новий дайджест буде за ${waitMin} хв, а попередній вище в чаті`
       );
     }
     return (
