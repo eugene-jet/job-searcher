@@ -7,7 +7,8 @@ compatibility_date = "2025-01-01"
 # GitHub's schedule, so the wall-clock time shifts by an hour across DST exactly
 # as it did before — the only thing that changes is punctuality.
 # One expression for every tick: on the hour and on the half hour, from 6:00 to
-# 20:00 UTC, which is 9:00 to 23:00 Europe/Kyiv. That is 30 ticks a day, of
+# 20:30 UTC, which is 9:00 to 23:30 Europe/Kyiv in summer and 8:00 to 22:30 in
+# winter (TICK_SPAN_UTC in worker.js mirrors this span). That is 30 ticks a day, of
 # which scheduled() in worker.js turns two — 9:00 and 18:00 UTC exactly — into
 # the real report and the other 28 into a refresh that only updates the digest
 # the bot serves on /start.
