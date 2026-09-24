@@ -155,6 +155,41 @@ The replies are defined in [`worker.js`](worker.js) — `startReply()` for the
 `/start` variants, and `STOP_REPLY` and `HELP_REPLY` for the other two. That
 file is the source of truth; change a reply there and update this table with it.
 
+### Bot description
+
+The description is the text Telegram shows in an empty chat above the **Start**
+button, so it is the first thing someone arriving from a shared link reads. The
+Worker owns it: on every cron tick it builds the text in `botDescription()` and
+calls `setMyDescription` whenever the result differs from the text it last set
+(kept in KV under `bot:description`). This overwrites any description entered
+by hand in @BotFather, so edit it in [`worker.js`](worker.js) instead.
+
+> Свіжі вакансії Product Design та UI/UX з DOU і Djinni двічі на день, о *12:00*
+> і *21:00*, прямо в особисті. Тільки за останні три дні, найновіші зверху.
+>
+> 📋 Вакансій за останні 7 днів: *38*
+> 👥 Уже підписалися: *57*
+>
+> Натисни Start, і актуальний дайджест прийде одразу.
+
+- **The vacancy count** is the number of Product Design and UI/UX vacancies
+  dated within the last seven days, counting today, on both boards together.
+  The report works it out in `week_count()` in
+  [`daily_report.py`](../daily_report.py), with the same title filter and the
+  same dates as the digest, Djinni bumps included, and sends it to `/digest`
+  as `week_count`. A vacancy posted on both boards counts twice, as it is
+  listed twice in the digest. The line is left out when either board failed to
+  scrape, since one board alone would understate the week, and when the count
+  is zero.
+- **The subscriber count** is the number of active subscribers, the same figure the
+  dashboard shows as Active. It appears only once there are at least
+  `DESCRIPTION_COUNT_MIN` (30) of them; below that the line is left out,
+  because a count of a handful would put people off rather than draw them in.
+  The count comes from the snapshot the tick records anyway, so it follows the
+  half-hourly cron and stands still overnight, when the cron does not run.
+- **The delivery times** come from the same UTC report hours as the `/start`
+  replies, so the description follows daylight saving by itself.
+
 ### One-time setup
 
 1. **Create the KV namespace** that stores the subscriber list, then paste the
@@ -230,7 +265,7 @@ be shared freely.
 | `/stats` | GET | read | Counts: `{"total", "active", "blocked", "stopped"}`. |
 | `/deactivate` | POST | admin | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
 | `/broadcast` | POST | admin | Send one message to every active subscriber: `{"text": "..."}`. |
-| `/digest` | POST | admin | Store the rendered digest for `/start` to serve: `{"date", "sent_at", "full": [...], "reduced": [...] \| null}`. |
+| `/digest` | POST | admin | Store the rendered digest for `/start` to serve: `{"date", "sent_at", "full": [...], "reduced": [...] \| null, "week_count": n \| null}`. |
 | `/latest` | GET | public | The stored digest as a web page — what `/start` sends. Reduced variant; the admin key shows the full one. |
 | `/history` | GET | public | Daily count snapshots + live current, for the dashboard. |
 | `/dashboard` | GET | public | HTML page charting subscribers over time. |

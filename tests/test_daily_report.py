@@ -577,6 +577,38 @@ def test_prepare_bump_pulls_an_older_vacancy_into_the_window(monkeypatch):
     assert djinni[0]["date_posted"] == "2026-09-22"
 
 
+# --- week_count ------------------------------------------------------------
+
+def test_week_count_covers_seven_days_and_the_digest_filter():
+    today = datetime.date(2026, 9, 22)
+    data = {
+        "djinni": [
+            _vac(title="Product Designer", date_posted="2026-09-22"),
+            # The first day of the week, counting today.
+            _vac(title="UX Designer", date_posted="2026-09-16"),
+            # A day too old.
+            _vac(title="UI Designer", date_posted="2026-09-15"),
+            # Scraped, but not in the family the digest ships.
+            _vac(title="Graphic Designer", date_posted="2026-09-21"),
+            # No date at all cannot be placed in the week.
+            _vac(title="Product Designer", date_posted=None),
+        ],
+        "dou": [_vac(title="UX/UI дизайнер", source="dou", date_posted="2026-09-20")],
+        "_errors": {},
+    }
+    assert dr.week_count(data, today) == 3
+
+
+def test_week_count_is_none_when_a_board_failed():
+    # One board's count alone would understate the week.
+    data = {
+        "djinni": [_vac(date_posted="2026-09-22")],
+        "dou": [],
+        "_errors": {"dou": "URLError: down"},
+    }
+    assert dr.week_count(data, datetime.date(2026, 9, 22)) is None
+
+
 # --- publish_digest --------------------------------------------------------
 
 def test_publish_digest_posts_both_variants(monkeypatch):
@@ -605,7 +637,22 @@ def test_publish_digest_posts_both_variants(monkeypatch):
         # The same list the scheduled delivery uses, so /start cannot drift
         # from it; normalised the way igaming_recipients reads it.
         "igaming_chat_ids": ["11", "22"],
+        # No count given: the Worker leaves the description's line out.
+        "week_count": None,
     }
+
+
+def test_publish_digest_carries_the_week_count(monkeypatch):
+    monkeypatch.setenv("DIGEST_URL", "https://worker/digest")
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["body"] = json.loads(request.data.decode())
+        return _FakeResponse()
+
+    monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
+    dr.publish_digest("2026-09-22", "21:00", ["a"], None, 38)
+    assert captured["body"]["week_count"] == 38
 
 
 def test_publish_digest_sends_an_empty_list_when_unrestricted(monkeypatch):

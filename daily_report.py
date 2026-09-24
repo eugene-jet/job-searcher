@@ -50,6 +50,11 @@ WINDOW_DAYS = 3
 # posting older than that which gets bumped is missed.
 BUMP_LOOKBACK_DAYS = 14
 
+# How many calendar days back, counting today, the bot's description counts
+# vacancies over (see week_count). Well inside BUMP_LOOKBACK_DAYS, so a Djinni
+# posting bumped within the week is counted by its bump date like the digest.
+WEEK_DAYS = 7
+
 SOURCE_LABEL = {"dou": "DOU", "djinni": "Djinni"}
 
 # Cloudflare fronts the subscriber Worker and answers the default urllib
@@ -459,7 +464,33 @@ def deactivate_subscribers(chat_ids):
         sys.stderr.write("Subscriber deactivate failed: %s\n" % exc)
 
 
-def publish_digest(today, sent_at, full, reduced):
+def week_count(data, today_d):
+    """Count the Product Design / UI/UX vacancies of the last ``WEEK_DAYS`` days.
+
+    The bot's description shows this figure to people who have not subscribed
+    yet, so it counts exactly what the digest would list over a week: the same
+    title filter and the same dates, including a Djinni bump date that
+    ``_prepare`` has already written into ``date_posted``. Both boards scrape
+    their whole listing, which reaches well past a week, so the count needs no
+    extra requests.
+
+    Returns ``None`` when either board failed to scrape: a count from one board
+    would understate the week, and the Worker leaves the line out rather than
+    show a figure that looks like a slump. A vacancy posted on both boards is
+    counted twice, as it is listed twice in the digest.
+    """
+    if data.get("_errors"):
+        return None
+    since = (today_d - datetime.timedelta(days=WEEK_DAYS - 1)).isoformat()
+    return sum(
+        1
+        for source in ("djinni", "dou")
+        for v in data[source]
+        if (v.get("date_posted") or "") >= since and scrapers.is_product_ui_ux(v["title"])
+    )
+
+
+def publish_digest(today, sent_at, full, reduced, week=None):
     """Store the rendered digest on the Worker so ``/start`` can serve it at once.
 
     Without this the bot answers ``/start`` by dispatching a whole workflow run
@@ -476,6 +507,9 @@ def publish_digest(today, sent_at, full, reduced):
     to keep a copy of its own, entered separately, and the two drifted: the
     scheduled digest showed the block to a chat that ``/start`` then withheld
     it from. An empty list means no restriction, as it does here.
+
+    ``week`` is the vacancy count for the bot's description (see
+    ``week_count``); ``None`` tells the Worker to leave that line out.
     """
     url = os.environ.get("DIGEST_URL")
     if not url:
@@ -487,6 +521,7 @@ def publish_digest(today, sent_at, full, reduced):
         "full": full,
         "reduced": reduced,
         "igaming_chat_ids": sorted(igaming_recipients()),
+        "week_count": week,
     }
     req = urllib.request.Request(
         url,
@@ -604,6 +639,8 @@ def main():
     igaming, djinni, dou, djinni_all, dou_all = _prepare(
         data, today_d, cutoff, fast=bool(only_chat)
     )
+    # After _prepare, so Djinni bump dates count as they do in the digest.
+    week = week_count(data, today_d)
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     allow_igaming = igaming_recipients()
 
@@ -626,7 +663,7 @@ def main():
     # demand when a /start finds the stored digest stale.
     if os.environ.get("REFRESH_ONLY", "").strip():
         full, reduced = variants()
-        published = publish_digest(today, sent_at, full, reduced)
+        published = publish_digest(today, sent_at, full, reduced, week)
         print(
             "Refresh %s | iGaming %d | Djinni %d | DOU %d | %d message(s)"
             % (
@@ -703,7 +740,7 @@ def main():
             full, reduced = variants()
             # Refresh what /start serves before fanning out: the messages about
             # to be delivered are exactly the ones a new subscriber should get.
-            publish_digest(today, sent_at, full, reduced)
+            publish_digest(today, sent_at, full, reduced, week)
             sent = 0
             blocked = []
             for chat_id in recipients:
