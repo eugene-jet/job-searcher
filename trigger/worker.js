@@ -556,8 +556,14 @@ async function sendTo(env, chatId, text, html = false) {
 }
 
 // Send a one-off message to every active subscriber. Retires chats that blocked
-// the bot, so it doubles as a liveness check. Small lists only: Telegram caps
-// broadcasts near 30 messages/second, which this does not throttle for.
+// the bot, so it doubles as a liveness check.
+//
+// Small lists only. Sends are paced to stay under Telegram's bulk rate of about
+// 30 a second, but a harder ceiling sits in front of that: every send is a
+// fetch, and on Cloudflare's free plan one Worker invocation may make at most 50
+// of them. A broadcast to a list much past 40 would fail part-way. The daily
+// digest does not go through here — it is sent from GitHub Actions — so this
+// limits only the admin broadcast.
 async function handleBroadcast(request, env) {
   if (!env.TELEGRAM_BOT_TOKEN) {
     return json({ error: "TELEGRAM_BOT_TOKEN not set" }, 500);
@@ -580,6 +586,8 @@ async function handleBroadcast(request, env) {
   const blocked = [];
   for (const id of ids) {
     const status = await sendTo(env, id, text);
+    // 20 a second: under Telegram's bulk rate, and waiting costs no CPU time.
+    await new Promise((resolve) => setTimeout(resolve, 50));
     if (status === "ok") sent += 1;
     else if (status === "blocked") blocked.push(id);
   }

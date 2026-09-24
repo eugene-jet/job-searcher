@@ -1,10 +1,21 @@
 """Unit tests for the report-rendering and Telegram-formatting helpers."""
 
 import datetime
+import io
 import json
 import urllib.error
 
+import pytest
+
 import daily_report as dr
+
+
+@pytest.fixture(autouse=True)
+def slept(monkeypatch):
+    """Record pauses instead of taking them, so delivery tests stay instant."""
+    waits = []
+    monkeypatch.setattr(dr.time, "sleep", waits.append)
+    return waits
 
 
 def _vac(**over):
@@ -289,6 +300,44 @@ def test_deliver_error_continues_and_keeps_recipient(monkeypatch):
     calls = _patch_urlopen(monkeypatch, behaviour)
     assert dr._deliver("token", "chat", ["a", "b", "c"]) == "error"
     assert len(calls) == 3
+
+
+def _http_429(retry_after=None):
+    body = {"ok": False, "error_code": 429, "description": "Too Many Requests"}
+    if retry_after is not None:
+        body["parameters"] = {"retry_after": retry_after}
+    return urllib.error.HTTPError(
+        "https://api.telegram.org", 429, "Too Many Requests", None,
+        io.BytesIO(json.dumps(body).encode()),
+    )
+
+
+def test_deliver_pauses_after_every_message(monkeypatch, slept):
+    # The pause is what keeps a long subscriber list under Telegram's bulk rate.
+    _patch_urlopen(monkeypatch, lambda i, req: None)
+    assert dr._deliver("token", "chat", ["a", "b", "c"]) == "ok"
+    assert slept == [dr.TELEGRAM_SEND_INTERVAL_SEC] * 3
+
+
+def test_deliver_retries_after_429_and_waits_as_asked(monkeypatch, slept):
+    calls = _patch_urlopen(monkeypatch, lambda i, req: _http_429(2) if i == 0 else None)
+    assert dr._deliver("token", "chat", ["a"]) == "ok"
+    assert len(calls) == 2  # the 429, then the retry that got through
+    assert slept == [2, dr.TELEGRAM_SEND_INTERVAL_SEC]
+
+
+def test_deliver_gives_up_after_repeated_429_but_keeps_recipient(monkeypatch):
+    # Rate limiting is transient: the chunk fails, the chat is not retired.
+    calls = _patch_urlopen(monkeypatch, lambda i, req: _http_429(1))
+    assert dr._deliver("token", "chat", ["a"]) == "error"
+    assert len(calls) == dr.TELEGRAM_RETRIES_ON_429 + 1
+
+
+def test_retry_after_defaults_and_caps():
+    assert dr._retry_after(_http_429()) == 1
+    assert dr._retry_after(_http_429(3600)) == dr.TELEGRAM_MAX_RETRY_WAIT_SEC
+    bare = urllib.error.HTTPError("u", 429, "Too Many Requests", None, None)
+    assert dr._retry_after(bare) == 1
 
 
 # --- subscriber list -------------------------------------------------------

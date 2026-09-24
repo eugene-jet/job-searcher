@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -153,6 +154,20 @@ def build_report(today, cutoff, igaming, djinni, dou, errors, sent_at, totals):
 
 TELEGRAM_LIMIT = 3800  # Telegram's hard limit is 4096; leave room for tags.
 
+# Telegram lets one bot send bulk messages at about 30 a second and answers
+# anything faster with HTTP 429. The digest goes to every subscriber in a tight
+# loop, so without a pause the fan-out would outrun that once the list reaches a
+# few hundred chats, and the chats past the limit would silently miss the day's
+# digest. Pausing after every message keeps it at 20 a second however long the
+# list grows; at four subscribers it costs a fraction of a second.
+TELEGRAM_SEND_INTERVAL_SEC = 0.05
+
+# A 429 still carries the wait Telegram wants (``retry_after``). A chunk is
+# retried that many times after one before it counts as failed, and each wait
+# is capped so a long flood penalty cannot stall the whole run.
+TELEGRAM_RETRIES_ON_429 = 3
+TELEGRAM_MAX_RETRY_WAIT_SEC = 60
+
 
 def _esc(text):
     return (
@@ -239,21 +254,43 @@ def _deliver(token, chat_id, messages):
     """
     status = "ok"
     for msg in messages:
-        data = urllib.parse.urlencode(
-            {
-                "chat_id": chat_id,
-                "text": msg,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": "true",
-            }
-        ).encode()
-        url = "https://api.telegram.org/bot%s/sendMessage" % token
+        outcome = _send_chunk(token, chat_id, msg)
+        # Pace every send, delivered or not, so the whole fan-out stays under
+        # Telegram's bulk rate.
+        time.sleep(TELEGRAM_SEND_INTERVAL_SEC)
+        if outcome == "blocked":
+            return "blocked"
+        if outcome == "error":
+            status = "error"
+    return status
+
+
+def _send_chunk(token, chat_id, msg):
+    """Send one message, retrying after a 429; return "ok", "blocked" or "error"."""
+    data = urllib.parse.urlencode(
+        {
+            "chat_id": chat_id,
+            "text": msg,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": "true",
+        }
+    ).encode()
+    url = "https://api.telegram.org/bot%s/sendMessage" % token
+    for attempt in range(TELEGRAM_RETRIES_ON_429 + 1):
         try:
             with urllib.request.urlopen(
                 urllib.request.Request(url, data=data), timeout=30
             ) as resp:
                 resp.read()
+            return "ok"
         except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt < TELEGRAM_RETRIES_ON_429:
+                wait = _retry_after(exc)
+                sys.stderr.write(
+                    "Telegram 429 for %s, retrying in %ds\n" % (chat_id, wait)
+                )
+                time.sleep(wait)
+                continue
             # 403 = the user blocked the bot; 400 = a malformed request, which in
             # practice here means "chat not found" for a chat that was deleted.
             # Either way this recipient is unreachable and should be retired.
@@ -263,11 +300,21 @@ def _deliver(token, chat_id, messages):
                 )
                 return "blocked"
             sys.stderr.write("Telegram send failed for %s: %s\n" % (chat_id, exc))
-            status = "error"
+            return "error"
         except Exception as exc:  # noqa: BLE001 - notification must not break the run
             sys.stderr.write("Telegram send failed for %s: %s\n" % (chat_id, exc))
-            status = "error"
-    return status
+            return "error"
+    return "error"
+
+
+def _retry_after(exc):
+    """Seconds a 429 asked us to wait, from its JSON body; 1 if it named none."""
+    try:
+        body = json.loads(exc.read().decode())
+        wait = int((body.get("parameters") or {}).get("retry_after", 1))
+    except Exception:  # noqa: BLE001 - a missing or odd body just means "wait a bit"
+        wait = 1
+    return max(1, min(wait, TELEGRAM_MAX_RETRY_WAIT_SEC))
 
 
 def send_telegram(token, chat_id, messages):
