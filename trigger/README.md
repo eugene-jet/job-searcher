@@ -155,6 +155,31 @@ The replies are defined in [`worker.js`](worker.js) — `startReply()` for the
 `/start` variants, and `STOP_REPLY` and `HELP_REPLY` for the other two. That
 file is the source of truth; change a reply there and update this table with it.
 
+### Bot description
+
+The description is the text Telegram shows in an empty chat above the **Start**
+button, so it is the first thing someone arriving from a shared link reads. The
+Worker owns it: on every cron tick it builds the text in `botDescription()` and
+calls `setMyDescription` whenever the result differs from the text it last set
+(kept in KV under `bot:description`). This overwrites any description entered
+by hand in @BotFather, so edit it in [`worker.js`](worker.js) instead.
+
+> Свіжі вакансії Product Design та UI/UX з DOU і Djinni двічі на день, о *12:00*
+> і *21:00*, прямо в особисті. Тільки за останні три дні, найновіші зверху.
+>
+> 👥 Уже підписалися: *57*
+>
+> Натисни Start, і актуальний дайджест прийде одразу.
+
+- **The count** is the number of active subscribers, the same figure the
+  dashboard shows as Active. It appears only once there are at least
+  `DESCRIPTION_COUNT_MIN` (30) of them; below that the line is left out,
+  because a count of a handful would put people off rather than draw them in.
+  The count comes from the snapshot the tick records anyway, so it follows the
+  half-hourly cron and stands still overnight, when the cron does not run.
+- **The delivery times** come from the same UTC report hours as the `/start`
+  replies, so the description follows daylight saving by itself.
+
 ### One-time setup
 
 1. **Create the KV namespace** that stores the subscriber list, then paste the

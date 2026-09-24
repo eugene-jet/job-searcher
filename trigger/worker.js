@@ -154,6 +154,30 @@ const HELP_REPLY =
   "Я надсилаю дайджест вакансій Product Design та UI/UX. " +
   "Команди: /start – підписатися, /stop – відписатися";
 
+// The bot's description: the text Telegram shows in an empty chat above the
+// Start button, so it is the first thing someone arriving from a shared link
+// reads. The Worker owns it and rewrites it on the cron tick (see
+// updateDescription), which replaces whatever was set by hand in @BotFather.
+//
+// Once DESCRIPTION_COUNT_MIN chats are subscribed, the text also says how many.
+// Below that the line is left out: a count of a handful reads as "nobody uses
+// this" and would put people off rather than draw them in. The figure is the
+// active subscribers, the same one the dashboard shows as Active.
+const DESCRIPTION_COUNT_MIN = 30;
+
+function botDescription(active, now = new Date()) {
+  const [first, second] = reportTimesKyiv(now);
+  // "Уже підписалися: 57" rather than a sentence, so the count needs no
+  // plural form.
+  const count = active >= DESCRIPTION_COUNT_MIN ? `👥 Уже підписалися: ${active}\n\n` : "";
+  return (
+    "Свіжі вакансії Product Design та UI/UX з DOU і Djinni двічі на день, " +
+    `о ${first} і ${second}, прямо в особисті. Тільки за останні три дні, найновіші зверху.\n\n` +
+    count +
+    "Натисни Start, і актуальний дайджест прийде одразу."
+  );
+}
+
 async function dispatch(env, inputs) {
   const body = { ref: REF };
   if (inputs) body.inputs = inputs;
@@ -222,6 +246,27 @@ async function reply(env, chatId, text) {
       }),
     },
   );
+}
+
+// Set the bot's description when its text has changed: the count moved or
+// crossed the threshold, or daylight saving shifted the Kyiv times. The text
+// last set is kept in KV, so an unchanged tick costs one KV read and no call to
+// Telegram. A failed call is not recorded, and the next tick tries again.
+const DESCRIPTION_KEY = "bot:description";
+
+async function updateDescription(env, active) {
+  if (!env.TELEGRAM_BOT_TOKEN) return;
+  const text = botDescription(active);
+  if ((await env.SUBSCRIBERS.get(DESCRIPTION_KEY)) === text) return;
+  const res = await fetch(
+    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setMyDescription`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: text }),
+    },
+  );
+  if (res.ok) await env.SUBSCRIBERS.put(DESCRIPTION_KEY, text);
 }
 
 // --- Stored digest ---------------------------------------------------------
@@ -439,10 +484,12 @@ async function computeStats(env) {
 // Store one aggregate snapshot per day (keyed by date) so the dashboard can
 // chart growth over time. Only counts are stored, never chat ids. Called on the
 // cron tick; a second call the same day just overwrites that day's point.
+// Returns the counts, so the tick can reuse them for the bot's description.
 async function recordSnapshot(env) {
   const date = new Date().toISOString().slice(0, 10);
   const counts = await computeStats(env);
   await env.SUBSCRIBERS.put(`stat:${date}`, JSON.stringify({ date, ...counts }));
+  return counts;
 }
 
 // The stored daily snapshots, oldest first, plus a live "current" reading. A
@@ -829,7 +876,8 @@ const TICK_SPAN_UTC = [[6, 0], [20, 30]];
 
 export default {
   // Fired by the crons declared in wrangler.toml. A successful dispatch returns
-  // HTTP 204 with an empty body. It also records the day's subscriber snapshot.
+  // HTTP 204 with an empty body. It also records the day's subscriber snapshot
+  // and keeps the bot's description, which carries the count, up to date.
   //
   // Two ticks a day dispatch the full run: scrape, send to every subscriber,
   // commit the report and the analytics row. The other 28 dispatch a refresh,
@@ -844,7 +892,7 @@ export default {
     const isReport = at.getUTCMinutes() === 0 && REPORT_HOURS.includes(at.getUTCHours());
     const inputs = isReport ? undefined : { refresh_only: "true" };
     ctx.waitUntil(dispatch(env, inputs));
-    ctx.waitUntil(recordSnapshot(env));
+    ctx.waitUntil(recordSnapshot(env).then((counts) => updateDescription(env, counts.active)));
   },
 
   async fetch(request, env, ctx) {
