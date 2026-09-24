@@ -56,13 +56,39 @@ SOURCE_LABEL = {"dou": "DOU", "djinni": "Djinni"}
 # User-Agent with a 403, so requests to the Worker send an explicit one.
 WORKER_USER_AGENT = "job-searcher-report"
 
-# Vacancies that mention iGaming get pulled into their own block at the top.
-# Djinni descriptions arrive with the listing; DOU descriptions are fetched per
-# vacancy in main() and stashed under "description" before this runs. The
-# leading word boundary matters: without it the pattern also fires on any word
-# ending in "i" that precedes "gaming", so "AI gaming" — an ordinary way to
-# describe a game-development role — would be filed under iGaming.
-_IGAMING = re.compile(r"\bi[\s-]?gaming", re.IGNORECASE)
+# Vacancies that mention iGaming, or gambling by another name, get pulled into
+# their own block at the top. Djinni descriptions arrive with the listing; DOU
+# descriptions are fetched per vacancy in main() and stashed under
+# "description" before this runs.
+#
+# The leading word boundary on "igaming" matters: without it the pattern also
+# fires on any word ending in "i" that precedes "gaming", so "AI gaming" — an
+# ordinary way to describe a game-development role — would be filed here.
+#
+# The rest catch postings that describe gambling work without saying iGaming,
+# such as a "Poker Product Designer" asking for social casino experience. Each
+# was checked against the live listings, and three near-misses are kept out on
+# purpose: "planning poker" is a Scrum estimation technique, "betting on" is an
+# English idiom ("we're betting on AI"), and "slots" in a product posting is
+# far more often a booking time slot than a slot machine. The Ukrainian "ставка"
+# is left out too — in a job ad it is almost always the salary rate. Ukrainian
+# forms accept the Russian spelling as well, which some postings use.
+_IGAMING = re.compile(
+    r"\bi[\s-]?gaming"
+    r"|\bgambling\b"
+    r"|\bcasinos?\b"
+    r"|\bbetting\b(?!\s+on\b)"
+    r"|\bsportsbooks?\b"
+    r"|\bbookmakers?\b"
+    r"|(?<!planning\s)\bpoker\b"
+    r"|\bsweepstakes?\b"
+    r"|\blotter(?:y|ies)\b"
+    r"|казино"
+    r"|букмекер"
+    r"|бет{1,2}[іи]нг"
+    r"|г[еэ]мбл[іи]нг",
+    re.IGNORECASE,
+)
 
 
 def is_igaming(vac):

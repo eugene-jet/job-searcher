@@ -62,6 +62,38 @@ def test_is_igaming_does_not_match_a_word_ending_in_i():
         assert not dr.is_igaming(_vac(title="Product Designer", description=text)), text
 
 
+def test_is_igaming_matches_gambling_vocabulary():
+    # Postings that describe gambling work without saying iGaming, including
+    # the two live "Poker Product Designer" vacancies that prompted this.
+    for text in (
+        "Senior Poker Product Designer",
+        "experience with social casino products",
+        "a sports betting platform",
+        "gambling operator",
+        "our sportsbook",
+        "a licensed bookmaker",
+        "sweepstakes games",
+        "national lottery",
+        "онлайн-казино",
+        "букмекерська компанія",
+        "продукти для беттінгу",
+        "досвід у гемблінгу",
+        "опыт в гемблинге",
+    ):
+        assert dr.is_igaming(_vac(title="Product Designer", description=text)), text
+
+
+def test_is_igaming_ignores_the_near_misses():
+    # Each of these looks like gambling vocabulary but is not about gambling.
+    for text in (
+        "we estimate with planning poker",
+        "we're betting on AI-first design",
+        "design the booking flow for time slots",
+        "Зарплата: фіксована ставка — 120.000 грн",
+    ):
+        assert not dr.is_igaming(_vac(title="Product Designer", description=text)), text
+
+
 def test_is_igaming_matches_standalone_prefix_after_punctuation():
     for text in ("UI Designer — iGaming", "Designer (iGaming)"):
         assert dr.is_igaming(_vac(title=text)), text
