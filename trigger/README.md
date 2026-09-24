@@ -167,11 +167,21 @@ by hand in @BotFather, so edit it in [`worker.js`](worker.js) instead.
 > Свіжі вакансії Product Design та UI/UX з DOU і Djinni двічі на день, о *12:00*
 > і *21:00*, прямо в особисті. Тільки за останні три дні, найновіші зверху.
 >
+> 📋 Вакансій за останні 7 днів: *38*
 > 👥 Уже підписалися: *57*
 >
 > Натисни Start, і актуальний дайджест прийде одразу.
 
-- **The count** is the number of active subscribers, the same figure the
+- **The vacancy count** is the number of Product Design and UI/UX vacancies
+  dated within the last seven days, counting today, on both boards together.
+  The report works it out in `week_count()` in
+  [`daily_report.py`](../daily_report.py), with the same title filter and the
+  same dates as the digest, Djinni bumps included, and sends it to `/digest`
+  as `week_count`. A vacancy posted on both boards counts twice, as it is
+  listed twice in the digest. The line is left out when either board failed to
+  scrape, since one board alone would understate the week, and when the count
+  is zero.
+- **The subscriber count** is the number of active subscribers, the same figure the
   dashboard shows as Active. It appears only once there are at least
   `DESCRIPTION_COUNT_MIN` (30) of them; below that the line is left out,
   because a count of a handful would put people off rather than draw them in.
@@ -255,7 +265,7 @@ be shared freely.
 | `/stats` | GET | read | Counts: `{"total", "active", "blocked", "stopped"}`. |
 | `/deactivate` | POST | admin | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
 | `/broadcast` | POST | admin | Send one message to every active subscriber: `{"text": "..."}`. |
-| `/digest` | POST | admin | Store the rendered digest for `/start` to serve: `{"date", "sent_at", "full": [...], "reduced": [...] \| null}`. |
+| `/digest` | POST | admin | Store the rendered digest for `/start` to serve: `{"date", "sent_at", "full": [...], "reduced": [...] \| null, "week_count": n \| null}`. |
 | `/latest` | GET | public | The stored digest as a web page — what `/start` sends. Reduced variant; the admin key shows the full one. |
 | `/history` | GET | public | Daily count snapshots + live current, for the dashboard. |
 | `/dashboard` | GET | public | HTML page charting subscribers over time. |

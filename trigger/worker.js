@@ -159,21 +159,29 @@ const HELP_REPLY =
 // reads. The Worker owns it and rewrites it on the cron tick (see
 // updateDescription), which replaces whatever was set by hand in @BotFather.
 //
+// It says how many vacancies the last seven days brought, which the report
+// counts and sends along with the digest (week_count in daily_report.py). The
+// line is left out when that count is missing — a board failed to scrape, or
+// the digest was stored by a report that did not send one — or is zero.
+//
 // Once DESCRIPTION_COUNT_MIN chats are subscribed, the text also says how many.
 // Below that the line is left out: a count of a handful reads as "nobody uses
 // this" and would put people off rather than draw them in. The figure is the
 // active subscribers, the same one the dashboard shows as Active.
 const DESCRIPTION_COUNT_MIN = 30;
 
-function botDescription(active, now = new Date()) {
+function botDescription(active, week, now = new Date()) {
   const [first, second] = reportTimesKyiv(now);
-  // "Уже підписалися: 57" rather than a sentence, so the count needs no
-  // plural form.
-  const count = active >= DESCRIPTION_COUNT_MIN ? `👥 Уже підписалися: ${active}\n\n` : "";
+  // Each figure follows a colon rather than sitting in a sentence, so it
+  // needs no plural form.
+  const lines = [];
+  if (week > 0) lines.push(`📋 Вакансій за останні 7 днів: ${week}`);
+  if (active >= DESCRIPTION_COUNT_MIN) lines.push(`👥 Уже підписалися: ${active}`);
+  const counts = lines.length ? lines.join("\n") + "\n\n" : "";
   return (
     "Свіжі вакансії Product Design та UI/UX з DOU і Djinni двічі на день, " +
     `о ${first} і ${second}, прямо в особисті. Тільки за останні три дні, найновіші зверху.\n\n` +
-    count +
+    counts +
     "Натисни Start, і актуальний дайджест прийде одразу."
   );
 }
@@ -248,15 +256,17 @@ async function reply(env, chatId, text) {
   );
 }
 
-// Set the bot's description when its text has changed: the count moved or
+// Set the bot's description when its text has changed: a count moved or
 // crossed the threshold, or daylight saving shifted the Kyiv times. The text
-// last set is kept in KV, so an unchanged tick costs one KV read and no call to
+// last set is kept in KV, so an unchanged tick costs two KV reads (that and the
+// stored digest, which carries the week's vacancy count) and no call to
 // Telegram. A failed call is not recorded, and the next tick tries again.
 const DESCRIPTION_KEY = "bot:description";
 
 async function updateDescription(env, active) {
   if (!env.TELEGRAM_BOT_TOKEN) return;
-  const text = botDescription(active);
+  const digest = await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
+  const text = botDescription(active, digest && digest.week_count);
   if ((await env.SUBSCRIBERS.get(DESCRIPTION_KEY)) === text) return;
   const res = await fetch(
     `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setMyDescription`,
@@ -307,6 +317,9 @@ async function storeDigest(request, env) {
     igaming_chat_ids: Array.isArray(payload.igaming_chat_ids)
       ? payload.igaming_chat_ids.map(String)
       : null,
+    // Vacancies of the last seven days, for the bot's description. Null when
+    // the report could not count them or is too old to send the count.
+    week_count: Number.isInteger(payload.week_count) ? payload.week_count : null,
     stored_at: new Date().toISOString(),
   };
   await env.SUBSCRIBERS.put(DIGEST_KEY, JSON.stringify(record));
