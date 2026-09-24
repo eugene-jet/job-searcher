@@ -292,9 +292,10 @@ Days from the time the cron started recording come from the aggregate snapshot
 the Worker stores once a day. Days before that — and any day the cron missed —
 are rebuilt from the dates each subscriber record keeps (`first_seen`,
 `stopped_at`, `blocked_at`), and the chart draws them as hollow points so they
-are not mistaken for measurements. One approximation applies to rebuilt days: a
-chat that stopped and later pressed `/start` again loses its `stopped_at`, so
-its earlier gap does not show.
+are not mistaken for measurements. A chat that stopped and later pressed
+`/start` again keeps that stretch in a `gaps` list on its record, so rebuilt
+days count it as away for exactly those days. Returns made before `gaps` was
+introduced left no trace and count as active throughout; none had happened.
 
 No key is needed and no chat ids are exposed — only counts.
 

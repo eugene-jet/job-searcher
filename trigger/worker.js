@@ -311,6 +311,15 @@ async function subscribe(env, chatId, from) {
   const key = `sub:${chatId}`;
   const existing = await env.SUBSCRIBERS.get(key, "json");
   const now = new Date().toISOString();
+  // A chat coming back after /stop or a block closes a gap in its subscription.
+  // The record is rebuilt below without stopped_at and blocked_at, so the gap
+  // is kept here, in `gaps`, or the dashboard could never show it: rebuilding
+  // a past day's count needs to know the chat was away then.
+  const gaps = (existing && Array.isArray(existing.gaps) && existing.gaps) || [];
+  if (existing && !existing.active) {
+    const since = existing.blocked ? existing.blocked_at : existing.stopped_at;
+    if (since) gaps.push({ from: since, to: now, blocked: Boolean(existing.blocked) });
+  }
   const record = {
     id: chatId,
     active: true,
@@ -319,6 +328,7 @@ async function subscribe(env, chatId, from) {
     last_start: now,
     username: (from && from.username) || null,
     first_name: (from && from.first_name) || null,
+    gaps,
   };
   await env.SUBSCRIBERS.put(key, JSON.stringify(record));
   // Where the chat stood before this /start, so the reply can match it.
@@ -460,10 +470,11 @@ async function history(env) {
   // back to the first subscription ever. A stored snapshot always wins where
   // one exists, because it was measured on the day.
   //
-  // The rebuilt days are an approximation in one respect: a chat that stopped
-  // and later pressed /start again has its stopped_at cleared by subscribe(),
-  // so its earlier gap cannot be seen and it counts as active throughout.
-  // Each rebuilt point is flagged so the chart can draw it differently.
+  // A chat that stopped and later came back keeps that closed gap in `gaps`
+  // (see subscribe()), so rebuilt days count it as away for the right stretch.
+  // Returns made before `gaps` existed left no trace and count as active
+  // throughout. Each rebuilt point is flagged so the chart can draw it
+  // differently.
   const firsts = records.map((r) => (r.first_seen || "").slice(0, 10)).filter(Boolean);
   const start = [...firsts, ...stored.keys()].sort()[0] || today;
   const points = [];
@@ -483,15 +494,18 @@ async function history(env) {
 
 // Subscriber counts as they stood at the end of `day` (YYYY-MM-DD), derived
 // from the dates kept on each record. Mirrors computeStats: a blocked chat
-// counts as blocked even if it had also stopped.
+// counts as blocked even if it had also stopped. A closed gap counts the chat
+// as away from the day it left up to, but not including, the day it returned;
+// one that left and came back the same day was subscribed at the end of it.
 function countOn(records, day) {
   const on = (iso) => Boolean(iso) && iso.slice(0, 10) <= day;
   const totals = { total: 0, active: 0, blocked: 0, stopped: 0 };
   for (const r of records) {
     if (!on(r.first_seen)) continue;
     totals.total += 1;
-    if (on(r.blocked_at)) totals.blocked += 1;
-    else if (on(r.stopped_at)) totals.stopped += 1;
+    const away = (r.gaps || []).find((g) => on(g.from) && g.to.slice(0, 10) > day);
+    if (on(r.blocked_at) || (away && away.blocked)) totals.blocked += 1;
+    else if (on(r.stopped_at) || away) totals.stopped += 1;
     else totals.active += 1;
   }
   return totals;
