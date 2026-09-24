@@ -79,7 +79,10 @@ dispatched by the Worker's own cron) re-scrapes and updates the stored copy
 without sending anything to anyone. The cron ticks every half hour from 9:00 to
 23:30 Kyiv — 30 ticks a day, of which two are the real report (12:00 and 21:00)
 and 28 are refreshes — so a new subscriber normally sees vacancies at most half
-an hour old.
+an hour old. Those are summer times: the cron runs on UTC, so in winter
+everything happens an hour earlier by the Kyiv clock (8:00 to 22:30, reports at
+11:00 and 20:00). Everything the bot and the digest page show derives its times
+from the UTC schedule, so they follow the change on their own.
 
 If a `/start` finds the stored digest older than half an hour anyway — before the
 day's first tick, or after a failed refresh — it is still served immediately, and

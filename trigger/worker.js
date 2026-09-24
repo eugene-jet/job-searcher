@@ -130,9 +130,10 @@ function startReply(state, waitMin, record, now = new Date()) {
   return `Ти вже з нами 🙂 Тримай свіжий дайджест${at}. Регулярні о ${first} і ${second}.`;
 }
 
+// "9:00", not "09:00": the hour is written as people write it.
 const KYIV_CLOCK = new Intl.DateTimeFormat("uk-UA", {
   timeZone: "Europe/Kyiv",
-  hour: "2-digit",
+  hour: "numeric",
   minute: "2-digit",
   hourCycle: "h23",
 });
@@ -235,7 +236,8 @@ async function reply(env, chatId, text) {
 const DIGEST_KEY = "digest:latest";
 // How old the stored digest may get before a /start also kicks off a refresh in
 // the background. Matches the half-hourly cron, so the debounce fires only when
-// a tick was missed or the day's first /start lands before 9:00 Kyiv. The runs
+// a tick was missed or the day's first /start lands before the first tick
+// (9:00 Kyiv in summer, 8:00 in winter). The runs
 // it starts are capped below.
 const DIGEST_MAX_AGE_SEC = 1800;
 
@@ -598,7 +600,14 @@ async function handleBroadcast(request, env) {
 // render as-is; only the line breaks need turning into markup. Nothing is
 // escaped here on purpose: this text was written by the report through an
 // admin-only endpoint, not by a visitor.
-function digestPage(record, variant, messages) {
+function digestPage(record, variant, messages, now = new Date()) {
+  // The refresh span as a Kyiv clock for today. The cron is UTC, so the span
+  // is 9:00–23:30 in summer and 8:00–22:30 in winter; a fixed "9:00" in the
+  // footer would be wrong for half the year.
+  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
+  const [from, to] = TICK_SPAN_UTC.map(([h, min]) =>
+    KYIV_CLOCK.format(new Date(Date.UTC(y, m, d, h, min))),
+  );
   const body = messages.join("\n\n").split("\n").join("<br>\n");
   const when = record.sent_at ? `Зібрано ${record.sent_at} (Київ)` : "";
   const stored = record.stored_at
@@ -647,7 +656,7 @@ function digestPage(record, variant, messages) {
   <div class="card">
 ${body}
   </div>
-  <p class="foot">Оновлюється кожні 30 хвилин, з 9:00 до 23:30 за Києвом.</p>
+  <p class="foot">Оновлюється кожні 30 хвилин, з ${from} до ${to} за Києвом.</p>
 </div>
 </body>
 </html>`;
@@ -791,6 +800,10 @@ async function cachedResponse(request, ctx, ttl, produce) {
 // The two UTC hours that carry the real report, on the hour exactly; see the
 // cron in wrangler.toml. Every other tick only refreshes the stored digest.
 const REPORT_HOURS = [9, 18];
+
+// The first and last tick of the day in UTC, as [hour, minute] — the span of
+// the "0,30 6-20 * * *" cron in wrangler.toml, which is where to change it.
+const TICK_SPAN_UTC = [[6, 0], [20, 30]];
 
 export default {
   // Fired by the crons declared in wrangler.toml. A successful dispatch returns
