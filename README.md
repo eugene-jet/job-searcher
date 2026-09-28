@@ -23,24 +23,28 @@ by a small Cloudflare Worker.
 
 Each run posts a message like this to Telegram — the same content is saved as a
 dated file such as
-[`reports/report-2026-23-09.md`](reports/report-2026-23-09.md):
+[`reports/report-2026-09-26.md`](reports/report-2026-09-26.md):
 
-> **Design вакансії 🧑‍💻✨**
-> 🕒 **23-09-2026 21:00** (Київ)
-> За останні 3 дні (07/09-09-2026)
+> **Design вакансії 🧑‍💻✨**\
+> 🕒 **26-09-2026 21:00** (Київ)\
+> За останні 3 дні (24/26-09-2026)
 >
-> **🟣 iGaming (1)**
-> ⦿ 08-09-2026
-> • Senior Product Designer (4069) — Ciklum · Київ, Львів, віддалено [DOU]
+> **🟠 Djinni (6/72)**\
+> ⦿ **25-09-2026**\
+> • Product UI/UX Designer — Asocial · Remote\
+> • UX/UI Product Designer — B2BSoft · Remote\
+> ⦿ **24-09-2026**\
+> • Product designer — bodo · UKR\
+> • Product UX/UI Designer — In Sync · Remote\
+> • Trainee/Junior UX/UI Designer — BasMar Software · UA\
+> • UI/UX Designer — Vista Auction · Remote
 >
-> **🟠 Djinni (4)**
-> ⦿ 08-09-2026
-> • UX Designer — Invictus
-> • Senior Product Designer — Invictus
->
-> **🟢 DOU (9)**
-> ⦿ 09-09-2026
-> • …
+> **🟢 DOU (3/261)**\
+> ⦿ **25-09-2026**\
+> • Senior Product Designer — WhiteTech · віддалено\
+> • UI/UX Designer — VCHASNO GROUP · Київ, віддалено\
+> ⦿ **24-09-2026**\
+> • UX Designer / Product Designer — Perla Helsa · Київ
 
 <!-- Prefer a real screenshot? Add a Telegram capture under docs/ and link it here. -->
 
