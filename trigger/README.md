@@ -171,7 +171,8 @@ by hand in @BotFather, so edit it in [`worker.js`](worker.js) instead.
 > 📋 Вакансій за останні 7 днів: *38*
 > 👥 Уже підписалися: *57*
 >
-> Натисни Start, і актуальний дайджест прийде одразу.
+> Натисни Start, і актуальний дайджест прийде одразу. Відписатися можна будь-коли
+> командою /stop.
 
 - **The vacancy count** is the number of Product Design and UI/UX vacancies
   dated within the last seven days, counting today, on both boards together.
@@ -190,6 +191,31 @@ by hand in @BotFather, so edit it in [`worker.js`](worker.js) instead.
   half-hourly cron and stands still overnight, when the cron does not run.
 - **The delivery times** come from the same `REPORT_HOURS_KYIV` as the `/start`
   replies, 11:00 and 20:00 Kyiv all year round.
+
+### Bot short description
+
+The short description is the Info text on the bot's profile page, and Telegram
+also sends it along with the link when someone shares the bot. It is capped at
+120 characters, so it says only what the bot sends and how to stop it. The
+Worker sets it the same way as the description: `botShortDescription()` builds
+the text, and the cron tick calls `setMyShortDescription` whenever it differs
+from the text last set (kept in KV under `bot:short_description`). Edit it in
+[`worker.js`](worker.js), not in @BotFather.
+
+> Привіт! Щодня о *11:00* і *20:00* надсилаю свіжі вакансії Product Design та
+> UI/UX з DOU і Djinni. Набридне, пиши /stop
+
+### Bot commands
+
+The commands are what Telegram lists behind the **Menu** button beside the
+message field and suggests when someone types `/`. The Worker sets them from
+`BOT_COMMANDS` with `setMyCommands`, on the same tick and under the same rule
+(kept in KV under `bot:commands`), so edit them in [`worker.js`](worker.js):
+
+| Command  | Description                              |
+| -------- | ---------------------------------------- |
+| `/start` | Підписатися й отримати свіжий дайджест   |
+| `/stop`  | Відписатися від дайджесту                |
 
 ### One-time setup
 
