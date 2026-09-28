@@ -77,12 +77,14 @@ That digest is kept ready in advance. The report posts its rendered Telegram
 messages to `/digest` at the end of every run, and a refresh run (`refresh_only`,
 dispatched by the Worker's own cron) re-scrapes and updates the stored copy
 without sending anything to anyone. The cron ticks every half hour from 9:00 to
-23:30 Kyiv — 30 ticks a day, of which two are the real report (12:00 and 21:00)
+23:30 Kyiv — 30 ticks a day, of which two are the real report (11:00 and 20:00)
 and 28 are refreshes — so a new subscriber normally sees vacancies at most half
-an hour old. Those are summer times: the cron runs on UTC, so in winter
-everything happens an hour earlier by the Kyiv clock (8:00 to 22:30, reports at
-11:00 and 20:00). Everything the bot and the digest page show derives its times
-from the UTC schedule, so they follow the change on their own.
+an hour old. The refresh span is a summer time: the cron runs on UTC, so in
+winter the ticks run an hour earlier by the Kyiv clock (8:00 to 22:30), and the
+digest page derives its footer from the UTC span to match. The report does not
+move: the Worker picks the two report ticks by their Kyiv time, so they land on
+11:00 and 20:00 in both seasons (08:00 and 17:00 UTC in summer, 09:00 and 18:00
+UTC in winter).
 
 If a `/start` finds the stored digest older than half an hour anyway — before the
 day's first tick, or after a failed refresh — it is still served immediately, and
@@ -109,9 +111,8 @@ scrapes fresh for that one chat and takes about twenty seconds.
 The reply to `/start` depends on where the chat stands: a first subscription
 gets a welcome with the delivery times, a chat that is already subscribed is told
 so and gets the digest with the time it was collected, and a chat returning after
-`/stop` is welcomed back. The delivery times are derived from the cron's UTC
-hours, so they follow daylight saving — 12:00 and 21:00 Kyiv in summer, 11:00 and
-20:00 in winter.
+`/stop` is welcomed back. The delivery times are 11:00 and 20:00 Kyiv all year
+round, the same `REPORT_HOURS_KYIV` that picks the report ticks.
 
 `/start` is rate-limited to **one digest per chat per 10 minutes**, counted
 from the moment that chat's last digest was sent: a digest at 22:27 permits the
@@ -136,16 +137,16 @@ filled in when the reply is sent:
 
 | When | Reply | Digest follows |
 | --- | --- | --- |
-| `/start` — first subscription | Вітаю! Тепер свіжі вакансії Product Design та UI/UX приходитимуть тобі двічі на день, о *12:00* і *21:00*. Перший дайджест одразу нижче. Якщо набридне пиши /stop. | yes |
-| `/start` — already subscribed | Ти вже з нами 🙂 Тримай свіжий дайджест, зібраний о *22:10*. Регулярні о *12:00* і *21:00*. | yes |
+| `/start` — first subscription | Вітаю! Тепер свіжі вакансії Product Design та UI/UX приходитимуть тобі двічі на день, о *11:00* і *20:00*. Перший дайджест одразу нижче. Якщо набридне пиши /stop. | yes |
+| `/start` — already subscribed | Ти вже з нами 🙂 Тримай свіжий дайджест, зібраний о *22:10*. Регулярні о *11:00* і *20:00*. | yes |
 | `/start` — again within 10 minutes of the last digest | Попередній дайджест уже вище в чаті. Новий можна отримувати раз на 10 хв, тож чекаємо на тебе через *6* хв 🤖 | no |
-| `/start` — returning after `/stop` | З поверненням! Підписку відновлено – дайджест знову приходитиме о *12:00* і *21:00*. Ось актуальний. | yes, once per 10 minutes |
+| `/start` — returning after `/stop` | З поверненням! Підписку відновлено – дайджест знову приходитиме о *11:00* і *20:00*. Ось актуальний. | yes, once per 10 minutes |
 | `/start` — returning again within those 10 minutes | Підписку знову відновлено! Схоже, вона кілька разів поспіль вмикалась і вимикалась 😞. Новий дайджест буде за *8* хв, а попередній вище в чаті | no |
 | `/stop` | Підписку скасовано, дайджест більше не надходитиме 😭. Щоб повернутися, надішли /start. | — |
 | any other text | Я надсилаю дайджест вакансій Product Design та UI/UX. Команди: /start – підписатися, /stop – відписатися | — |
 
-- **Delivery times** come from the cron's UTC report hours, so they follow
-  daylight saving: 12:00 and 21:00 Kyiv in summer, 11:00 and 20:00 in winter.
+- **Delivery times** come from `REPORT_HOURS_KYIV` in [`worker.js`](worker.js):
+  11:00 and 20:00 Kyiv, the same in summer and in winter.
 - **The collection time** is when the stored digest was built; the clause is
   left out if that is unknown.
 - **The minutes** are how long remains of the ten counted from the chat's last
@@ -164,8 +165,8 @@ calls `setMyDescription` whenever the result differs from the text it last set
 (kept in KV under `bot:description`). This overwrites any description entered
 by hand in @BotFather, so edit it in [`worker.js`](worker.js) instead.
 
-> Свіжі вакансії Product Design та UI/UX з DOU і Djinni двічі на день, о *12:00*
-> і *21:00*, прямо в особисті. Тільки за останні три дні, найновіші зверху.
+> Свіжі вакансії Product Design та UI/UX з DOU і Djinni двічі на день, о *11:00*
+> і *20:00*, прямо в особисті. Тільки за останні три дні, найновіші зверху.
 >
 > 📋 Вакансій за останні 7 днів: *38*
 > 👥 Уже підписалися: *57*
@@ -187,8 +188,8 @@ by hand in @BotFather, so edit it in [`worker.js`](worker.js) instead.
   because a count of a handful would put people off rather than draw them in.
   The count comes from the snapshot the tick records anyway, so it follows the
   half-hourly cron and stands still overnight, when the cron does not run.
-- **The delivery times** come from the same UTC report hours as the `/start`
-  replies, so the description follows daylight saving by itself.
+- **The delivery times** come from the same `REPORT_HOURS_KYIV` as the `/start`
+  replies, 11:00 and 20:00 Kyiv all year round.
 
 ### One-time setup
 
