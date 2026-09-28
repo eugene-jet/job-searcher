@@ -23,7 +23,7 @@ by a small Cloudflare Worker.
 
 Each run posts a message like this to Telegram — the same content is saved as a
 dated file such as
-[`reports/report-2026-09-09.md`](reports/report-2026-23-09.md):
+[`reports/report-2026-23-09.md`](reports/report-2026-23-09.md):
 
 > **Design вакансії 🧑‍💻✨**
 > 🕒 **23-09-2026 21:00** (Київ)
