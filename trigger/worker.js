@@ -161,7 +161,7 @@ const HELP_REPLY =
 // The bot's description: the text Telegram shows in an empty chat above the
 // Start button, so it is the first thing someone arriving from a shared link
 // reads. The Worker owns it and rewrites it on the cron tick (see
-// updateDescription), which replaces whatever was set by hand in @BotFather.
+// updateBotProfile), which replaces whatever was set by hand in @BotFather.
 //
 // It says how many vacancies the last seven days brought, which the report
 // counts and sends along with the digest (week_count in daily_report.py). The
@@ -186,9 +186,28 @@ function botDescription(active, week) {
     "Свіжі вакансії Product Design та UI/UX з DOU і Djinni двічі на день, " +
     `о ${first} і ${second}, прямо в особисті. Тільки за останні три дні, найновіші зверху.\n\n` +
     counts +
-    "Натисни Start, і актуальний дайджест прийде одразу."
+    "Натисни Start, і актуальний дайджест прийде одразу. " +
+    "Відписатися можна будь-коли командою /stop."
   );
 }
+
+// The bot's short description: the Info text on its profile page, also sent
+// along with the link when someone shares the bot. Telegram caps it at 120
+// characters, so it says only what the bot sends and how to stop it.
+function botShortDescription() {
+  const [first, second] = reportTimesKyiv();
+  return (
+    `Привіт! Щодня о ${first} і ${second} надсилаю свіжі вакансії Product Design ` +
+    "та UI/UX з DOU і Djinni. Набридне, пиши /stop"
+  );
+}
+
+// The commands Telegram lists in the Menu button beside the message field and
+// suggests when someone types "/". The descriptions match HELP_REPLY.
+const BOT_COMMANDS = [
+  { command: "start", description: "Підписатися й отримати свіжий дайджест" },
+  { command: "stop", description: "Відписатися від дайджесту" },
+];
 
 async function dispatch(env, inputs) {
   const body = { ref: REF };
@@ -260,27 +279,42 @@ async function reply(env, chatId, text) {
   );
 }
 
-// Set the bot's description when its text has changed: a count moved or
-// crossed the threshold, or the report hours were changed in the code. The text
-// last set is kept in KV, so an unchanged tick costs two KV reads (that and the
-// stored digest, which carries the week's vacancy count) and no call to
-// Telegram. A failed call is not recorded, and the next tick tries again.
+// Set the bot's description, short description and command list when they have
+// changed: a count moved or crossed the threshold, or the wording or report
+// hours were changed in the code. What was last set is kept in KV, so an
+// unchanged tick costs four KV reads (the three settings and the stored digest,
+// which carries the week's vacancy count) and no call to Telegram. A failed
+// call is not recorded, and the next tick tries again.
 const DESCRIPTION_KEY = "bot:description";
+const SHORT_DESCRIPTION_KEY = "bot:short_description";
+const COMMANDS_KEY = "bot:commands";
 
-async function updateDescription(env, active) {
+async function updateBotProfile(env, active) {
   if (!env.TELEGRAM_BOT_TOKEN) return;
   const digest = await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
-  const text = botDescription(active, digest && digest.week_count);
-  if ((await env.SUBSCRIBERS.get(DESCRIPTION_KEY)) === text) return;
+  await setIfChanged(env, "setMyDescription", DESCRIPTION_KEY, {
+    description: botDescription(active, digest && digest.week_count),
+  });
+  await setIfChanged(env, "setMyShortDescription", SHORT_DESCRIPTION_KEY, {
+    short_description: botShortDescription(),
+  });
+  await setIfChanged(env, "setMyCommands", COMMANDS_KEY, { commands: BOT_COMMANDS });
+}
+
+// Call a Telegram set* method with `body`, unless the body last sent, kept in
+// KV under `key`, is the same.
+async function setIfChanged(env, method, key, body) {
+  const payload = JSON.stringify(body);
+  if ((await env.SUBSCRIBERS.get(key)) === payload) return;
   const res = await fetch(
-    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setMyDescription`,
+    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ description: text }),
+      body: payload,
     },
   );
-  if (res.ok) await env.SUBSCRIBERS.put(DESCRIPTION_KEY, text);
+  if (res.ok) await env.SUBSCRIBERS.put(key, payload);
 }
 
 // --- Stored digest ---------------------------------------------------------
@@ -901,7 +935,8 @@ const TICK_SPAN_UTC = [[6, 0], [20, 30]];
 export default {
   // Fired by the crons declared in wrangler.toml. A successful dispatch returns
   // HTTP 204 with an empty body. It also records the day's subscriber snapshot
-  // and keeps the bot's description, which carries the count, up to date.
+  // and keeps the bot's description, which carries the count, up to date, along
+  // with its short description and command list.
   //
   // Two ticks a day dispatch the full run: scrape, send to every subscriber,
   // commit the report and the analytics row. The other 28 dispatch a refresh,
@@ -916,7 +951,7 @@ export default {
     const isReport = at.getUTCMinutes() === 0 && REPORT_HOURS_KYIV.includes(kyivHour(at));
     const inputs = isReport ? undefined : { refresh_only: "true" };
     ctx.waitUntil(dispatch(env, inputs));
-    ctx.waitUntil(recordSnapshot(env).then((counts) => updateDescription(env, counts.active)));
+    ctx.waitUntil(recordSnapshot(env).then((counts) => updateBotProfile(env, counts.active)));
   },
 
   async fetch(request, env, ctx) {
