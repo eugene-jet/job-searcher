@@ -2,16 +2,16 @@ name = "job-searcher-trigger"
 main = "worker.js"
 compatibility_date = "2025-01-01"
 
-# UTC: 09:00 UTC = 12:00 Europe/Kyiv (summer),
-# 18:00 UTC = 21:00 Europe/Kyiv (summer). Cloudflare cron is UTC-only, just like
-# GitHub's schedule, so the wall-clock time shifts by an hour across DST exactly
-# as it did before — the only thing that changes is punctuality.
-# One expression for every tick: on the hour and on the half hour, from 6:00 to
-# 20:30 UTC, which is 9:00 to 23:30 Europe/Kyiv in summer and 8:00 to 22:30 in
-# winter (TICK_SPAN_UTC in worker.js mirrors this span). That is 30 ticks a day, of
-# which scheduled() in worker.js turns two — 9:00 and 18:00 UTC exactly — into
-# the real report and the other 28 into a refresh that only updates the digest
-# the bot serves on /start.
+# Cloudflare cron is UTC-only, just like GitHub's schedule, so the report hours
+# are not written here. One expression covers every tick: on the hour and on the
+# half hour, from 6:00 to 20:30 UTC, which is 9:00 to 23:30 Europe/Kyiv in summer
+# and 8:00 to 22:30 in winter (TICK_SPAN_UTC in worker.js mirrors this span).
+# That is 30 ticks a day, of which scheduled() in worker.js turns two — the ones
+# that fall on 11:00 and 20:00 Kyiv time exactly (REPORT_HOURS_KYIV) — into the
+# real report and the other 28 into a refresh that only updates the digest the
+# bot serves on /start. Choosing the report ticks by their Kyiv time keeps the
+# delivery at 11:00 and 20:00 all year: 08:00 and 17:00 UTC in summer, 09:00 and
+# 18:00 UTC in winter, all four inside this span.
 #
 # Deliberately a single expression. Two expressions that match the same minute
 # fire scheduled() twice, and on a report minute that means the digest goes out

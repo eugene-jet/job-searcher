@@ -154,9 +154,11 @@ The same suite runs in CI on every push and pull request
 
 The report runs as a GitHub Actions workflow
 ([`.github/workflows/daily.yml`](.github/workflows/daily.yml)). It is triggered
-twice a day — 09:00 and 18:00 UTC (12:00 and 21:00 Europe/Kyiv in summer) — by
-the Cloudflare Worker in [`trigger/`](trigger/), which calls the workflow's
-`workflow_dispatch` entry point. GitHub Actions' own `schedule:` was removed: it
+twice a day — at 11:00 and 20:00 Europe/Kyiv, all year round — by the
+Cloudflare Worker in [`trigger/`](trigger/), which calls the workflow's
+`workflow_dispatch` entry point. The Worker's cron runs on UTC, so it picks the
+report ticks by their Kyiv time: 08:00 and 17:00 UTC in summer, 09:00 and 18:00
+UTC in winter. GitHub Actions' own `schedule:` was removed: it
 ran on a best-effort basis and routinely fired tens of minutes to several hours
 late (or was dropped under load), so the punctual Worker cron replaced it.
 

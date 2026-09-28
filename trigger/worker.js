@@ -93,8 +93,8 @@ function parseWelcome(raw) {
 // welcomeWait); when it is above zero none follows and the reply has to say so
 // — the single reply this replaced promised a digest "in a minute" that then
 // never came.
-function startReply(state, waitMin, record, now = new Date()) {
-  const [first, second] = reportTimesKyiv(now);
+function startReply(state, waitMin, record) {
+  const [first, second] = reportTimesKyiv();
   if (waitMin > 0) {
     // "хв" rather than the full word, so the count needs no plural form.
     if (state === "returning") {
@@ -138,13 +138,17 @@ const KYIV_CLOCK = new Intl.DateTimeFormat("uk-UA", {
   hourCycle: "h23",
 });
 
-// The report hours as a Kyiv wall clock on the given day. Derived from the UTC
-// REPORT_HOURS rather than written out, because the cron is UTC and the Kyiv
-// time moves by an hour across daylight saving: 12:00 and 21:00 in summer,
-// 11:00 and 20:00 in winter. A hard-coded "12:00" would be wrong half the year.
-function reportTimesKyiv(now) {
-  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
-  return REPORT_HOURS.map((h) => KYIV_CLOCK.format(new Date(Date.UTC(y, m, d, h))));
+// The report hours as people read them, "11:00" and "20:00". REPORT_HOURS_KYIV
+// is already a Kyiv wall clock, so the text is the same all year round.
+function reportTimesKyiv() {
+  return REPORT_HOURS_KYIV.map((h) => `${h}:00`);
+}
+
+// The hour a tick falls on by the Kyiv clock, 0–23. Kyiv is a whole number of
+// hours from UTC, so the minute needs no conversion and scheduled() reads it
+// straight from the UTC time.
+function kyivHour(at) {
+  return Number(KYIV_CLOCK.formatToParts(at).find((p) => p.type === "hour").value);
 }
 
 
@@ -170,8 +174,8 @@ const HELP_REPLY =
 // active subscribers, the same one the dashboard shows as Active.
 const DESCRIPTION_COUNT_MIN = 30;
 
-function botDescription(active, week, now = new Date()) {
-  const [first, second] = reportTimesKyiv(now);
+function botDescription(active, week) {
+  const [first, second] = reportTimesKyiv();
   // Each figure follows a colon rather than sitting in a sentence, so it
   // needs no plural form.
   const lines = [];
@@ -257,7 +261,7 @@ async function reply(env, chatId, text) {
 }
 
 // Set the bot's description when its text has changed: a count moved or
-// crossed the threshold, or daylight saving shifted the Kyiv times. The text
+// crossed the threshold, or the report hours were changed in the code. The text
 // last set is kept in KV, so an unchanged tick costs two KV reads (that and the
 // stored digest, which carries the week's vacancy count) and no call to
 // Telegram. A failed call is not recorded, and the next tick tries again.
@@ -879,9 +883,16 @@ async function cachedResponse(request, ctx, ttl, produce) {
   return res;
 }
 
-// The two UTC hours that carry the real report, on the hour exactly; see the
-// cron in wrangler.toml. Every other tick only refreshes the stored digest.
-const REPORT_HOURS = [9, 18];
+// The two hours that carry the real report, on the hour exactly, by the Kyiv
+// clock rather than UTC. Cloudflare's cron only speaks UTC, so it ticks every
+// half hour and scheduled() picks the report ticks by their Kyiv time; that way
+// the report stays at 11:00 and 20:00 across daylight saving, which falls on
+// 08:00 and 17:00 UTC in summer and on 09:00 and 18:00 UTC in winter. Every
+// other tick only refreshes the stored digest.
+//
+// Any hour here must lie inside TICK_SPAN_UTC in both seasons, or no tick
+// lands on it and the report silently never goes out.
+const REPORT_HOURS_KYIV = [11, 20];
 
 // The first and last tick of the day in UTC, as [hour, minute] — the span of
 // the "0,30 6-20 * * *" cron in wrangler.toml, which is where to change it.
@@ -899,10 +910,10 @@ export default {
   // most half an hour old to serve.
   //
   // The minute is part of the test, not only the hour: ticks land on the hour
-  // and on the half hour, and 9:30 is a refresh even though 9:00 is a report.
+  // and on the half hour, and 11:30 is a refresh even though 11:00 is a report.
   async scheduled(event, env, ctx) {
     const at = new Date(event.scheduledTime);
-    const isReport = at.getUTCMinutes() === 0 && REPORT_HOURS.includes(at.getUTCHours());
+    const isReport = at.getUTCMinutes() === 0 && REPORT_HOURS_KYIV.includes(kyivHour(at));
     const inputs = isReport ? undefined : { refresh_only: "true" };
     ctx.waitUntil(dispatch(env, inputs));
     ctx.waitUntil(recordSnapshot(env).then((counts) => updateDescription(env, counts.active)));
