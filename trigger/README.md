@@ -145,6 +145,10 @@ filled in when the reply is sent:
 | `/start` — returning again within those 10 minutes | Підписку знову відновлено! Схоже, вона кілька разів поспіль вмикалась і вимикалась 😞. Новий дайджест буде за *8* хв, а попередній вище в чаті | no |
 | `/start` — on `/pause` | Паузу знято! Дайджест знову приходитиме о *11:00* і *20:00*. Ось актуальний. | yes |
 | `/start` — on `/pause`, within 10 minutes of the last digest | Паузу знято – дайджест знову приходитиме о *11:00* і *20:00*. Попередній вище в чаті, а новий можна отримати через *6* хв. | no |
+| `/digest` — subscribed | Тримай свіжий дайджест, зібраний о *22:10*. | yes |
+| `/digest` — on `/pause` | Тримай свіжий дайджест, зібраний о *22:10*. Регулярні на паузі до *7 жовтня*. | yes |
+| `/digest` — within 10 minutes of the last digest | the same reply as `/start` gets then | no |
+| `/digest` — not subscribed | Дайджест приходить підписникам. Щоб підписатися й одразу отримати свіжий, надішли /start. | — |
 | `/pause` — subscribed | На скільки поставити дайджест на паузу? Підписка залишиться, а дайджести повернуться самі. Buttons: 7 днів · 14 днів · 30 днів · Скасувати | — |
 | `/pause` — already on pause | Дайджест на паузі до *7 жовтня*. Можна поставити нову паузу, рахуючи від сьогодні, або зняти її. Buttons: 7 днів · 14 днів · 30 днів · Зняти паузу | — |
 | `/pause`, or a button, when not subscribed | Підписки зараз немає, тож і ставити на паузу нічого. Щоб підписатися, надішли /start. | — |
@@ -155,7 +159,8 @@ filled in when the reply is sent:
 | `/feedback` with text, or the next message after it | Дякую, відгук надіслано 🙌 | — |
 | `/feedback` — more than 3 in an hour | Цей відгук не надіслано: за годину можна надіслати до 3. Спробуй трохи згодом. | — |
 | `/stop` | Підписку скасовано, дайджест більше не надходитиме 😭. Якщо щось було не так, розкажи через /feedback. Щоб повернутися, надішли /start. | — |
-| any other text | Я надсилаю дайджест вакансій Product Design та UI/UX. Команди: /start – підписатися, /pause – поставити на паузу, /feedback – написати відгук, /stop – відписатися | — |
+| any other text — subscribed | Я надсилаю дайджест вакансій Product Design та UI/UX. Команди: /digest – свіжий дайджест, /pause – поставити на паузу, /feedback – написати відгук, /stop – відписатися | — |
+| any other text — not subscribed | Я надсилаю дайджест вакансій Product Design та UI/UX. Щоб підписатися, надішли /start. Відгук чи ідею можна надіслати через /feedback. | — |
 
 - **Delivery times** come from `REPORT_HOURS_KYIV` in [`worker.js`](worker.js):
   11:00 and 20:00 Kyiv, the same in summer and in winter.
@@ -169,9 +174,10 @@ A button's reply replaces the `/pause` message it was pressed on, so the buttons
 go away with it.
 
 The replies are defined in [`worker.js`](worker.js) — `startReply()` for the
-`/start` variants, `pausePrompt()` and `applyPause()` for `/pause` and its
-buttons, the `FEEDBACK_` constants for `/feedback`, and `PAUSE_NOT_SUBSCRIBED`,
-`STOP_REPLY` and `HELP_REPLY` for the rest.
+`/start` variants, `digestReply()` for `/digest`, `pausePrompt()` and
+`applyPause()` for `/pause` and its buttons, the `FEEDBACK_` constants for
+`/feedback`, and `DIGEST_NOT_SUBSCRIBED`, `PAUSE_NOT_SUBSCRIBED`, `STOP_REPLY`,
+`HELP_REPLY` and `HELP_REPLY_UNSUBSCRIBED` for the rest.
 That file is the source of truth; change a reply there and update this table
 with it.
 
@@ -192,7 +198,8 @@ announcements.
 The pause ends early when the chat sends `/start`, which serves the digest as
 usual, or presses **Зняти паузу**, which `/pause` offers instead of **Скасувати**
 while a pause is on. Choosing a length again replaces the pause, counted from
-that day. `/stop` unsubscribes whether or not the chat is paused.
+that day. `/stop` unsubscribes whether or not the chat is paused. `/digest`
+serves the current digest without touching the pause.
 
 The buttons arrive as `callback_query` updates. Telegram sends those to the
 webhook unless `allowed_updates` was narrowed when the webhook was set; see
@@ -205,7 +212,8 @@ The note can follow the command (`/feedback додайте фільтр`, also o
 line), or the command can come alone, and then the chat's next message that is
 not a command, within 10 minutes, is taken as the note. The help reply and the
 `/stop` reply both mention it, since someone who has just unsubscribed is the one
-whose reasons are most worth hearing. It is not in the command menu.
+whose reasons are most worth hearing. Only subscribers see it in the command
+menu.
 
 The Worker sends each note to `FEEDBACK_CHAT_ID` as plain text, headed with who
 sent it and where their subscription stands:
@@ -282,15 +290,45 @@ from the text last set (kept in KV under `bot:short_description`). Edit it in
 ### Bot commands
 
 The commands are what Telegram lists behind the **Menu** button beside the
-message field and suggests when someone types `/`. The Worker sets them from
-`BOT_COMMANDS` with `setMyCommands`, on the same tick and under the same rule
-(kept in KV under `bot:commands`), so edit them in [`worker.js`](worker.js):
+message field and suggests when someone types `/`. A chat sees one of two lists,
+depending on whether it is subscribed. Edit both in [`worker.js`](worker.js).
+
+Everybody who is not subscribed — which in practice means someone who has sent
+`/stop`, because a chat that has never pressed **Start** shows that button
+instead of the menu — sees the bot's own list, `BOT_COMMANDS`. The Worker sets it
+with `setMyCommands` on the same tick and under the same rule as the description
+(kept in KV under `bot:commands`):
 
 | Command  | Description                              |
 | -------- | ---------------------------------------- |
 | `/start` | Підписатися й отримати свіжий дайджест   |
-| `/pause` | Поставити дайджест на паузу              |
-| `/stop`  | Відписатися від дайджесту                |
+
+A subscribed chat is given its own list, `SUBSCRIBER_COMMANDS`, which Telegram
+shows in that chat instead:
+
+| Command     | Description                    |
+| ----------- | ------------------------------ |
+| `/digest`   | Свіжий дайджест зараз          |
+| `/pause`    | Поставити дайджест на паузу    |
+| `/feedback` | Написати відгук                |
+| `/stop`     | Відписатися від дайджесту      |
+
+`/digest` sends the current digest, under the same ten-minute limit as `/start`,
+but leaves the subscription as it is. It is the Telegram command, not the
+`/digest` endpoint the report posts to. `/start` keeps working for subscribers
+too; it only leaves their menu, where "subscribe" would read oddly.
+
+The Worker sets a chat's own list with `setMyCommands` and a `chat` scope on every
+`/start`, and removes it with `deleteMyCommands` on `/stop`, which brings back the
+bot's list. What Telegram last accepted is kept on the chat's `sub:` record as
+`menu`, holding the `MENU_VERSION` the chat got. On each cron tick, while
+counting subscribers, the Worker picks out the chats whose `menu` does not match
+where they stand and puts up to 20 of them right: a call that failed, a chat
+that subscribed before the menu existed, or a new `MENU_VERSION`. Raise
+`MENU_VERSION` whenever `SUBSCRIBER_COMMANDS` changes, and the tick rolls the new
+list out to every subscriber, 20 chats per tick. Blocked chats are skipped.
+
+Telegram clients may keep showing the old list until the chat is reopened.
 
 ### One-time setup
 
@@ -375,7 +413,7 @@ be shared freely.
 
 | Route | Method | Access | Purpose |
 | --- | --- | --- | --- |
-| `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start`, `/pause`, `/feedback`, `/stop` and the `/pause` buttons. |
+| `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start`, `/digest`, `/pause`, `/feedback`, `/stop` and the `/pause` buttons. |
 | `/subscribers` | GET | read | Chat ids to send the digest to — active subscribers not on pause: `{"subscribers": [...]}`. |
 | `/stats` | GET | read | Counts: `{"total", "active", "blocked", "stopped", "paused"}`; `paused` is part of `active`. |
 | `/deactivate` | POST | admin | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |

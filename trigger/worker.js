@@ -143,6 +143,16 @@ function startReply(state, waitMin, record) {
   return `Ти вже з нами 🙂 Тримай свіжий дайджест${at}. Регулярні о ${first} і ${second}.`;
 }
 
+// The reply to /digest. `digest` is the stored digest and `sub` the chat's own
+// record; a paused chat is reminded that its regular digests are on hold. A
+// chat that has to wait gets the same reply as a repeated /start.
+function digestReply(waitMin, digest, sub) {
+  if (waitMin > 0) return startReply("active", waitMin, digest);
+  const at = digest && digest.sent_at ? `, зібраний о ${digest.sent_at.slice(-5)}` : "";
+  const paused = isPaused(sub) ? ` Регулярні на паузі до ${dayMonth(sub.paused_until)}.` : "";
+  return `Тримай свіжий дайджест${at}.${paused}`;
+}
+
 // "9:00", not "09:00": the hour is written as people write it.
 const KYIV_CLOCK = new Intl.DateTimeFormat("uk-UA", {
   timeZone: "Europe/Kyiv",
@@ -168,10 +178,17 @@ function kyivHour(at) {
 const STOP_REPLY =
   "Підписку скасовано, дайджест більше не надходитиме 😭. " +
   "Якщо щось було не так, розкажи через /feedback. Щоб повернутися, надішли /start.";
+// The reply to anything the bot does not understand, one for a subscriber and
+// one for everybody else, matching the menu each is shown.
 const HELP_REPLY =
   "Я надсилаю дайджест вакансій Product Design та UI/UX. " +
-  "Команди: /start – підписатися, /pause – поставити на паузу, " +
+  "Команди: /digest – свіжий дайджест, /pause – поставити на паузу, " +
   "/feedback – написати відгук, /stop – відписатися";
+const HELP_REPLY_UNSUBSCRIBED =
+  "Я надсилаю дайджест вакансій Product Design та UI/UX. " +
+  "Щоб підписатися, надішли /start. Відгук чи ідею можна надіслати через /feedback.";
+const DIGEST_NOT_SUBSCRIBED =
+  "Дайджест приходить підписникам. Щоб підписатися й одразу отримати свіжий, надішли /start.";
 
 // The bot's description: the text Telegram shows in an empty chat above the
 // Start button, so it is the first thing someone arriving from a shared link
@@ -218,12 +235,24 @@ function botShortDescription() {
 }
 
 // The commands Telegram lists in the Menu button beside the message field and
-// suggests when someone types "/". The descriptions match HELP_REPLY.
+// suggests when someone types "/". There are two lists. BOT_COMMANDS is the
+// bot's own, which every chat sees unless it has one of its own; it offers only
+// /start, since nothing else is of use before subscribing. A subscribed chat is
+// given SUBSCRIBER_COMMANDS as its own list instead (see setChatMenu), where
+// /start, which would read "subscribe", gives way to /digest.
 const BOT_COMMANDS = [
   { command: "start", description: "Підписатися й отримати свіжий дайджест" },
+];
+const SUBSCRIBER_COMMANDS = [
+  { command: "digest", description: "Свіжий дайджест зараз" },
   { command: "pause", description: "Поставити дайджест на паузу" },
+  { command: "feedback", description: "Написати відгук" },
   { command: "stop", description: "Відписатися від дайджесту" },
 ];
+// Raise by one whenever SUBSCRIBER_COMMANDS changes. A chat's record keeps the
+// version it was last given, and the cron tick resends the list to every
+// subscriber whose version differs.
+const MENU_VERSION = 1;
 
 async function dispatch(env, inputs) {
   const body = { ref: REF };
@@ -338,6 +367,46 @@ async function setIfChanged(env, method, key, body) {
   if (res.ok) await env.SUBSCRIBERS.put(key, payload);
 }
 
+// Give a chat the menu that fits it: SUBSCRIBER_COMMANDS as its own list once
+// it subscribes, and on /stop no list of its own, which brings back the bot's
+// BOT_COMMANDS. The chat's record keeps what Telegram last accepted, as `menu`
+// (the MENU_VERSION it got, or absent), so the cron tick can find the chats
+// whose menu is out of date — a call that failed, a chat that subscribed before
+// the menu existed, or a new MENU_VERSION — and put them right.
+async function setChatMenu(env, chatId, subscribed) {
+  if (!env.TELEGRAM_BOT_TOKEN) return;
+  const scope = { type: "chat", chat_id: chatId };
+  const res = subscribed
+    ? await telegram(env, "setMyCommands", { commands: SUBSCRIBER_COMMANDS, scope })
+    : await telegram(env, "deleteMyCommands", { scope });
+  if (!res.ok) return;
+  const key = `sub:${chatId}`;
+  const record = await env.SUBSCRIBERS.get(key, "json");
+  if (!record) return;
+  if (subscribed) record.menu = MENU_VERSION;
+  else delete record.menu;
+  await env.SUBSCRIBERS.put(key, JSON.stringify(record));
+}
+
+// A chat whose menu does not match where it stands. A blocked chat is left
+// alone: it cannot see the menu, and a /start when it comes back sets it anyway.
+function menuOutOfDate(record) {
+  if (record.active) return record.menu !== MENU_VERSION;
+  return !record.blocked && record.menu !== undefined;
+}
+
+// How many chats one cron tick may bring up to date. Each costs one call to
+// Telegram, and a tick shares Cloudflare's cap of 50 outgoing requests per
+// invocation with the dispatch and the bot's profile. The rest wait for the
+// next tick, half an hour later.
+const MENU_SYNC_PER_TICK = 20;
+
+async function syncChatMenus(env, records) {
+  for (const record of records.slice(0, MENU_SYNC_PER_TICK)) {
+    await setChatMenu(env, record.id, record.active);
+  }
+}
+
 // --- Stored digest ---------------------------------------------------------
 //
 // The daily report posts its rendered Telegram messages here (see
@@ -424,6 +493,24 @@ async function digestIsStale(env) {
   if (!record || !record.stored_at) return true;
   const age = (Date.now() - Date.parse(record.stored_at)) / 1000;
   return !Number.isFinite(age) || age > DIGEST_MAX_AGE_SEC;
+}
+
+// Serve the stored digest after the reply to /start or /digest.
+async function serveDigest(env, ctx, chatId, record) {
+  const served = await sendStoredDigest(env, chatId, record);
+  if (!served) {
+    // Nothing stored yet — the first deploy, or KV cleared. Fall back to
+    // the old path: a live run scoped to this chat.
+    await dispatch(env, { only_chat_id: chatId });
+  } else if (await digestIsStale(env)) {
+    // Served, but past its hour. Warm the next one in the background so
+    // whoever writes next gets something fresher; this chat is already
+    // answered and waits for nothing. Capped in case /start arrives in
+    // bursts while a refresh is still running.
+    if (!(await rateLimited(env, "refresh", 1, 900))) {
+      ctx.waitUntil(dispatch(env, { refresh_only: "true" }));
+    }
+  }
 }
 
 async function subscribe(env, chatId, from) {
@@ -704,6 +791,9 @@ async function handleWebhook(request, env, ctx) {
     const text = msg.text.trim();
     if (text === "/start" || text.startsWith("/start ")) {
       const state = await subscribe(env, chatId, msg.from);
+      // Sent every time, not only on a first subscription: it costs one call,
+      // and it puts right a menu that an earlier call failed to set.
+      ctx.waitUntil(setChatMenu(env, chatId, true));
       // Serve the digest the last report or refresh run stored, which arrives
       // in about a second — at most once per chat per WELCOME_WINDOW_SEC, so a
       // repeated /start cannot be used to fan out messages. The wait is worked
@@ -714,24 +804,23 @@ async function handleWebhook(request, env, ctx) {
       const waitMin = await welcomeWait(env, chatId, Date.now(), state === "returning");
       const record = waitMin ? null : await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
       await reply(env, chatId, startReply(state, waitMin, record));
-      if (!waitMin) {
-        const served = await sendStoredDigest(env, chatId, record);
-        if (!served) {
-          // Nothing stored yet — the first deploy, or KV cleared. Fall back to
-          // the old path: a live run scoped to this chat.
-          await dispatch(env, { only_chat_id: chatId });
-        } else if (await digestIsStale(env)) {
-          // Served, but past its hour. Warm the next one in the background so
-          // whoever writes next gets something fresher; this chat is already
-          // answered and waits for nothing. Capped in case /start arrives in
-          // bursts while a refresh is still running.
-          if (!(await rateLimited(env, "refresh", 1, 900))) {
-            ctx.waitUntil(dispatch(env, { refresh_only: "true" }));
-          }
-        }
+      if (!waitMin) await serveDigest(env, ctx, chatId, record);
+    } else if (text === "/digest" || text.startsWith("/digest ")) {
+      // The current digest between the regular ones, under the same ten-minute
+      // limit as /start. Unlike /start it leaves the subscription as it is, so
+      // a paused chat stays paused.
+      const sub = await env.SUBSCRIBERS.get(`sub:${chatId}`, "json");
+      if (!sub || !sub.active) {
+        await reply(env, chatId, DIGEST_NOT_SUBSCRIBED);
+      } else {
+        const waitMin = await welcomeWait(env, chatId);
+        const record = waitMin ? null : await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
+        await reply(env, chatId, digestReply(waitMin, record, sub));
+        if (!waitMin) await serveDigest(env, ctx, chatId, record);
       }
     } else if (text === "/stop" || text.startsWith("/stop ")) {
       await unsubscribe(env, chatId);
+      ctx.waitUntil(setChatMenu(env, chatId, false));
       await reply(env, chatId, STOP_REPLY);
     } else if (text === "/pause" || text.startsWith("/pause ")) {
       await sendPausePrompt(env, chatId);
@@ -744,7 +833,8 @@ async function handleWebhook(request, env, ctx) {
     } else if (!text.startsWith("/") && (await env.SUBSCRIBERS.get(`${FEEDBACK_WAIT_PREFIX}${chatId}`))) {
       await takeFeedback(env, msg, text);
     } else {
-      await reply(env, chatId, HELP_REPLY);
+      const sub = await env.SUBSCRIBERS.get(`sub:${chatId}`, "json");
+      await reply(env, chatId, sub && sub.active ? HELP_REPLY : HELP_REPLY_UNSUBSCRIBED);
     }
   }
   // Telegram only needs a 200 to mark the update delivered.
@@ -776,9 +866,10 @@ async function listSubscribers(env) {
 
 // `paused` is a part of `active`, not a fourth kind: a paused chat is still
 // subscribed.
-async function computeStats(env) {
+async function computeStats(env, onRecord) {
   const totals = { total: 0, active: 0, blocked: 0, stopped: 0, paused: 0 };
   await eachSubscriber(env, (record) => {
+    if (onRecord) onRecord(record);
     totals.total += 1;
     if (record.active) {
       totals.active += 1;
@@ -796,9 +887,11 @@ async function computeStats(env) {
 // chart growth over time. Only counts are stored, never chat ids. Called on the
 // cron tick; a second call the same day just overwrites that day's point.
 // Returns the counts, so the tick can reuse them for the bot's description.
-async function recordSnapshot(env) {
+// `onRecord` sees every subscriber record on the way, so the tick can check
+// the menus without walking the list a second time.
+async function recordSnapshot(env, onRecord) {
   const date = new Date().toISOString().slice(0, 10);
-  const counts = await computeStats(env);
+  const counts = await computeStats(env, onRecord);
   await env.SUBSCRIBERS.put(`stat:${date}`, JSON.stringify({ date, ...counts }));
   return counts;
 }
@@ -1196,7 +1289,8 @@ export default {
   // Fired by the crons declared in wrangler.toml. A successful dispatch returns
   // HTTP 204 with an empty body. It also records the day's subscriber snapshot
   // and keeps the bot's description, which carries the count, up to date, along
-  // with its short description and command list.
+  // with its short description and command list, and the menus of up to
+  // MENU_SYNC_PER_TICK chats whose own command list is out of date.
   //
   // Two ticks a day dispatch the full run: scrape, send to every subscriber,
   // commit the report and the analytics row. The other 28 dispatch a refresh,
@@ -1211,7 +1305,16 @@ export default {
     const isReport = at.getUTCMinutes() === 0 && REPORT_HOURS_KYIV.includes(kyivHour(at));
     const inputs = isReport ? undefined : { refresh_only: "true" };
     ctx.waitUntil(dispatch(env, inputs));
-    ctx.waitUntil(recordSnapshot(env).then((counts) => updateBotProfile(env, counts.active)));
+    const stale = [];
+    const collect = (record) => {
+      if (menuOutOfDate(record)) stale.push(record);
+    };
+    ctx.waitUntil(
+      recordSnapshot(env, collect).then(async (counts) => {
+        await updateBotProfile(env, counts.active);
+        await syncChatMenus(env, stale);
+      }),
+    );
   },
 
   async fetch(request, env, ctx) {
