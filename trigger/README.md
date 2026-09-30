@@ -14,8 +14,9 @@ effect as pressing **Run workflow** in the Actions tab). The scraping and
 Telegram delivery still run inside GitHub Actions; only the *trigger* moves out.
 
 **As the bot's back end**, it keeps the list of people who subscribed to the
-digest. Telegram sends every `/start` and `/stop` to the Worker's webhook, which
-records the chat in a KV namespace; the daily report reads the active list and
+digest. Telegram sends every `/start`, `/pause` and `/stop` to the Worker's
+webhook, which records the chat in a KV namespace; the daily report reads the
+active list and
 reports back anyone who blocked the bot. This is optional — without it the
 report still goes to whatever `TELEGRAM_CHAT_ID` lists — and it is what makes
 the subscriber count meaningful. Chat ids are personal data and live only in KV,
@@ -142,8 +143,16 @@ filled in when the reply is sent:
 | `/start` — again within 10 minutes of the last digest | Попередній дайджест вже вище в чаті. Новий можна отримувати раз на 10 хв, тож чекаємо на тебе через *6* хв 🤖 | no |
 | `/start` — returning after `/stop` | З поверненням! Підписку відновлено – дайджест знову приходитиме о *11:00* і *20:00*. Ось актуальний. | yes, once per 10 minutes |
 | `/start` — returning again within those 10 minutes | Підписку знову відновлено! Схоже, вона кілька разів поспіль вмикалась і вимикалась 😞. Новий дайджест буде за *8* хв, а попередній вище в чаті | no |
+| `/start` — on `/pause` | Паузу знято! Дайджест знову приходитиме о *11:00* і *20:00*. Ось актуальний. | yes |
+| `/start` — on `/pause`, within 10 minutes of the last digest | Паузу знято – дайджест знову приходитиме о *11:00* і *20:00*. Попередній вище в чаті, а новий можна отримати через *6* хв. | no |
+| `/pause` — subscribed | На скільки поставити дайджест на паузу? Підписка залишиться, а дайджести повернуться самі. Buttons: 7 днів · 14 днів · 30 днів · Скасувати | — |
+| `/pause` — already on pause | Дайджест на паузі до *7 жовтня*. Можна поставити нову паузу, рахуючи від сьогодні, або зняти її. Buttons: 7 днів · 14 днів · 30 днів · Зняти паузу | — |
+| `/pause`, or a button, when not subscribed | Підписки зараз немає, тож і ставити на паузу нічого. Щоб підписатися, надішли /start. | — |
+| button: 7, 14 or 30 днів | Готово, дайджест на паузі. Він повернеться *7 жовтня* о *11:00*. Якщо захочеш раніше, надішли /start. | — |
+| button: Зняти паузу | Паузу знято, дайджест знову приходитиме о *11:00* і *20:00*. | — |
+| button: Скасувати | Гаразд, дайджест приходитиме як і раніше. | — |
 | `/stop` | Підписку скасовано, дайджест більше не надходитиме 😭. Щоб повернутися, надішли /start. | — |
-| any other text | Я надсилаю дайджест вакансій Product Design та UI/UX. Команди: /start – підписатися, /stop – відписатися | — |
+| any other text | Я надсилаю дайджест вакансій Product Design та UI/UX. Команди: /start – підписатися, /pause – поставити на паузу, /stop – відписатися | — |
 
 - **Delivery times** come from `REPORT_HOURS_KYIV` in [`worker.js`](worker.js):
   11:00 and 20:00 Kyiv, the same in summer and in winter.
@@ -151,10 +160,39 @@ filled in when the reply is sent:
   left out if that is unknown.
 - **The minutes** are how long remains of the ten counted from the chat's last
   digest, from 1 to 10.
+- **The date** is the day the digest comes back after a pause.
+
+A button's reply replaces the `/pause` message it was pressed on, so the buttons
+go away with it.
 
 The replies are defined in [`worker.js`](worker.js) — `startReply()` for the
-`/start` variants, and `STOP_REPLY` and `HELP_REPLY` for the other two. That
-file is the source of truth; change a reply there and update this table with it.
+`/start` variants, `pausePrompt()` and `applyPause()` for `/pause` and its
+buttons, and `PAUSE_NOT_SUBSCRIBED`, `STOP_REPLY` and `HELP_REPLY` for the rest.
+That file is the source of truth; change a reply there and update this table
+with it.
+
+### Pause
+
+`/pause` holds the digest for 7, 14 or 30 days without unsubscribing, for a
+holiday or a search that is over for now. The chat picks the length with a
+button, and the Worker stores the day the digest comes back as `paused_until`
+on the chat's `sub:` record, as a Kyiv calendar date. Until that date
+`/subscribers` leaves the chat out, so the report sends it nothing; on that date
+it gets both digests as usual. Nothing needs to run for the pause to end.
+
+A paused chat is still a subscriber. It counts as active in `/stats`, on the
+dashboard and in the bot's description, and `/stats` also reports how many of the
+active chats are paused. It still receives a `/broadcast`, which is kept for
+announcements.
+
+The pause ends early when the chat sends `/start`, which serves the digest as
+usual, or presses **Зняти паузу**, which `/pause` offers instead of **Скасувати**
+while a pause is on. Choosing a length again replaces the pause, counted from
+that day. `/stop` unsubscribes whether or not the chat is paused.
+
+The buttons arrive as `callback_query` updates. Telegram sends those to the
+webhook unless `allowed_updates` was narrowed when the webhook was set; see
+step 4 of the setup below.
 
 ### Bot description
 
@@ -215,6 +253,7 @@ message field and suggests when someone types `/`. The Worker sets them from
 | Command  | Description                              |
 | -------- | ---------------------------------------- |
 | `/start` | Підписатися й отримати свіжий дайджест   |
+| `/pause` | Поставити дайджест на паузу              |
 | `/stop`  | Відписатися від дайджесту                |
 
 ### One-time setup
@@ -262,6 +301,12 @@ message field and suggests when someone types `/`. The Worker sets them from
    Open a chat with the bot and send `/start`; it should reply and appear in the
    list (step below).
 
+   The command above leaves `allowed_updates` at Telegram's default, which
+   includes the button presses `/pause` relies on. If the webhook was ever set
+   with a narrower `allowed_updates`, the buttons stop responding; check with
+   `getWebhookInfo`, and set the webhook again without it if `callback_query` is
+   missing from the list it reports.
+
 5. **Let the report read the list.** Add repository secrets in GitHub → Settings
    → Secrets and variables → Actions and wire them into the workflow env. The
    report sends the key as a Bearer token, so the URLs stay keyless:
@@ -287,9 +332,9 @@ be shared freely.
 
 | Route | Method | Access | Purpose |
 | --- | --- | --- | --- |
-| `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start` and `/stop`. |
-| `/subscribers` | GET | read | Active subscriber chat ids: `{"subscribers": [...]}`. |
-| `/stats` | GET | read | Counts: `{"total", "active", "blocked", "stopped"}`. |
+| `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start`, `/pause`, `/stop` and the `/pause` buttons. |
+| `/subscribers` | GET | read | Chat ids to send the digest to — active subscribers not on pause: `{"subscribers": [...]}`. |
+| `/stats` | GET | read | Counts: `{"total", "active", "blocked", "stopped", "paused"}`; `paused` is part of `active`. |
 | `/deactivate` | POST | admin | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
 | `/broadcast` | POST | admin | Send one message to every active subscriber: `{"text": "..."}`. |
 | `/digest` | POST | admin | Store the rendered digest for `/start` to serve: `{"date", "sent_at", "full": [...], "reduced": [...] \| null, "week_count": n \| null}`. |
