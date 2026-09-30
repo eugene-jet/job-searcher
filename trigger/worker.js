@@ -26,6 +26,8 @@
 //                       endpoints; the daily report passes it as `?key=...`.
 //   TRIGGER_SECRET      optional; when set, the manual dispatch endpoint
 //                       requires `?key=<TRIGGER_SECRET>`.
+//   FEEDBACK_CHAT_ID    optional; the owner's chat id, where /feedback notes
+//                       are sent. Without it they are only kept in KV.
 //   IGAMING_CHAT_IDS    no longer needed: the report now sends the list with
 //                       the stored digest. Read only as a fallback for a
 //                       digest stored before that, and safe to delete.
@@ -164,10 +166,12 @@ function kyivHour(at) {
 
 
 const STOP_REPLY =
-  "Підписку скасовано, дайджест більше не надходитиме 😭. Щоб повернутися, надішли /start.";
+  "Підписку скасовано, дайджест більше не надходитиме 😭. " +
+  "Якщо щось було не так, розкажи через /feedback. Щоб повернутися, надішли /start.";
 const HELP_REPLY =
   "Я надсилаю дайджест вакансій Product Design та UI/UX. " +
-  "Команди: /start – підписатися, /pause – поставити на паузу, /stop – відписатися";
+  "Команди: /start – підписатися, /pause – поставити на паузу, " +
+  "/feedback – написати відгук, /stop – відписатися";
 
 // The bot's description: the text Telegram shows in an empty chat above the
 // Start button, so it is the first thing someone arriving from a shared link
@@ -597,6 +601,88 @@ async function handleCallback(env, query) {
   });
 }
 
+// --- Feedback --------------------------------------------------------------
+//
+// /feedback passes a note to the bot's owner at FEEDBACK_CHAT_ID. The note can
+// follow the command ("/feedback текст"), or the command can come alone, and
+// then the chat's next plain message within FEEDBACK_WAIT_SEC is the note.
+//
+// Each note is also kept in KV under `feedback:` for FEEDBACK_KEEP_SEC, so one
+// is not lost when the owner's chat cannot be reached or FEEDBACK_CHAT_ID is
+// not set. It carries the sender's username and name, which are personal data,
+// hence the expiry.
+
+const FEEDBACK_WAIT_SEC = 600;
+const FEEDBACK_WAIT_PREFIX = "feedback_wait:";
+const FEEDBACK_KEEP_SEC = 90 * 86400;
+// Long enough for a paragraph or two, short enough that a paste of something
+// else does not flood the owner's chat.
+const FEEDBACK_MAX_CHARS = 1000;
+const FEEDBACK_PER_HOUR = 3;
+
+const FEEDBACK_PROMPT =
+  "Напиши наступним повідомленням, що варто покращити або що не так. " +
+  "Відгук отримає автор бота.";
+const FEEDBACK_THANKS = "Дякую, відгук надіслано 🙌";
+const FEEDBACK_LIMITED =
+  `Цей відгук не надіслано: за годину можна надіслати до ${FEEDBACK_PER_HOUR}. ` +
+  "Спробуй трохи згодом.";
+
+async function askFeedback(env, chatId) {
+  await env.SUBSCRIBERS.put(`${FEEDBACK_WAIT_PREFIX}${chatId}`, "1", {
+    expirationTtl: FEEDBACK_WAIT_SEC,
+  });
+  await reply(env, chatId, FEEDBACK_PROMPT);
+}
+
+// Where the chat stands, for the owner reading its note: a note sent after
+// /stop reads differently from one sent by a subscriber.
+function subscriptionStatus(record) {
+  if (!record) return "без підписки";
+  if (record.active) {
+    return isPaused(record) ? `на паузі до ${dayMonth(record.paused_until)}` : "підписка активна";
+  }
+  return record.blocked ? "бот заблоковано" : "підписку скасовано";
+}
+
+// "💬 Відгук від @user (Ім'я, id 123) · підписка активна", then the note.
+// Sent as plain text, so nothing in the note needs escaping.
+function feedbackMessage(entry) {
+  const who = [entry.first_name, `id ${entry.chat_id}`].filter(Boolean).join(", ");
+  const name = entry.username ? `@${entry.username} (${who})` : who;
+  return `💬 Відгук від ${name} · ${entry.status}\n\n${entry.text}`;
+}
+
+async function takeFeedback(env, msg, note) {
+  const chatId = String(msg.chat.id);
+  await env.SUBSCRIBERS.delete(`${FEEDBACK_WAIT_PREFIX}${chatId}`);
+  if (await rateLimited(env, `feedback:${chatId}`, FEEDBACK_PER_HOUR, 3600)) {
+    await reply(env, chatId, FEEDBACK_LIMITED);
+    return;
+  }
+  const from = msg.from || {};
+  const record = await env.SUBSCRIBERS.get(`sub:${chatId}`, "json");
+  const entry = {
+    at: new Date().toISOString(),
+    chat_id: chatId,
+    username: from.username || null,
+    first_name: from.first_name || null,
+    status: subscriptionStatus(record),
+    text: note.length > FEEDBACK_MAX_CHARS ? `${note.slice(0, FEEDBACK_MAX_CHARS)}…` : note,
+  };
+  await env.SUBSCRIBERS.put(`feedback:${entry.at}:${chatId}`, JSON.stringify(entry), {
+    expirationTtl: FEEDBACK_KEEP_SEC,
+  });
+  if (env.FEEDBACK_CHAT_ID && env.TELEGRAM_BOT_TOKEN) {
+    await telegram(env, "sendMessage", {
+      chat_id: env.FEEDBACK_CHAT_ID,
+      text: feedbackMessage(entry),
+      disable_web_page_preview: true,
+    });
+  }
+  await reply(env, chatId, FEEDBACK_THANKS);
+}
+
 async function handleWebhook(request, env, ctx) {
   // Telegram sends the configured secret_token in this header; reject anything
   // that does not carry it, even though the URL already embeds the secret.
@@ -649,6 +735,14 @@ async function handleWebhook(request, env, ctx) {
       await reply(env, chatId, STOP_REPLY);
     } else if (text === "/pause" || text.startsWith("/pause ")) {
       await sendPausePrompt(env, chatId);
+    } else if (/^\/feedback(?:\s|$)/.test(text)) {
+      // Any whitespace ends the command, not only a space: a note typed
+      // straight after it often starts on a new line.
+      const note = text.slice("/feedback".length).trim();
+      if (note) await takeFeedback(env, msg, note);
+      else await askFeedback(env, chatId);
+    } else if (!text.startsWith("/") && (await env.SUBSCRIBERS.get(`${FEEDBACK_WAIT_PREFIX}${chatId}`))) {
+      await takeFeedback(env, msg, text);
     } else {
       await reply(env, chatId, HELP_REPLY);
     }

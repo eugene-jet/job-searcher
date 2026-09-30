@@ -151,8 +151,11 @@ filled in when the reply is sent:
 | button: 7, 14 or 30 днів | Готово, дайджест на паузі. Він повернеться *7 жовтня* о *11:00*. Якщо захочеш раніше, надішли /start. | — |
 | button: Зняти паузу | Паузу знято, дайджест знову приходитиме о *11:00* і *20:00*. | — |
 | button: Скасувати | Гаразд, дайджест приходитиме як і раніше. | — |
-| `/stop` | Підписку скасовано, дайджест більше не надходитиме 😭. Щоб повернутися, надішли /start. | — |
-| any other text | Я надсилаю дайджест вакансій Product Design та UI/UX. Команди: /start – підписатися, /pause – поставити на паузу, /stop – відписатися | — |
+| `/feedback` alone | Напиши наступним повідомленням, що варто покращити або що не так. Відгук отримає автор бота. | — |
+| `/feedback` with text, or the next message after it | Дякую, відгук надіслано 🙌 | — |
+| `/feedback` — more than 3 in an hour | Цей відгук не надіслано: за годину можна надіслати до 3. Спробуй трохи згодом. | — |
+| `/stop` | Підписку скасовано, дайджест більше не надходитиме 😭. Якщо щось було не так, розкажи через /feedback. Щоб повернутися, надішли /start. | — |
+| any other text | Я надсилаю дайджест вакансій Product Design та UI/UX. Команди: /start – підписатися, /pause – поставити на паузу, /feedback – написати відгук, /stop – відписатися | — |
 
 - **Delivery times** come from `REPORT_HOURS_KYIV` in [`worker.js`](worker.js):
   11:00 and 20:00 Kyiv, the same in summer and in winter.
@@ -167,7 +170,8 @@ go away with it.
 
 The replies are defined in [`worker.js`](worker.js) — `startReply()` for the
 `/start` variants, `pausePrompt()` and `applyPause()` for `/pause` and its
-buttons, and `PAUSE_NOT_SUBSCRIBED`, `STOP_REPLY` and `HELP_REPLY` for the rest.
+buttons, the `FEEDBACK_` constants for `/feedback`, and `PAUSE_NOT_SUBSCRIBED`,
+`STOP_REPLY` and `HELP_REPLY` for the rest.
 That file is the source of truth; change a reply there and update this table
 with it.
 
@@ -193,6 +197,38 @@ that day. `/stop` unsubscribes whether or not the chat is paused.
 The buttons arrive as `callback_query` updates. Telegram sends those to the
 webhook unless `allowed_updates` was narrowed when the webhook was set; see
 step 4 of the setup below.
+
+### Feedback
+
+`/feedback` passes a note from any chat, subscribed or not, to the bot's owner.
+The note can follow the command (`/feedback додайте фільтр`, also on the next
+line), or the command can come alone, and then the chat's next message that is
+not a command, within 10 minutes, is taken as the note. The help reply and the
+`/stop` reply both mention it, since someone who has just unsubscribed is the one
+whose reasons are most worth hearing. It is not in the command menu.
+
+The Worker sends each note to `FEEDBACK_CHAT_ID` as plain text, headed with who
+sent it and where their subscription stands:
+
+> 💬 Відгук від @username (Ім'я, id 123456789) · підписка активна
+>
+> Додайте фільтр по Senior
+
+The status reads *підписка активна*, *на паузі до 7 жовтня*, *підписку
+скасовано*, *бот заблоковано* or *без підписки*.
+
+Each note is also stored in KV under `feedback:<time>:<chat_id>` for 90 days, so
+one is not lost if it could not be delivered, or arrived before
+`FEEDBACK_CHAT_ID` was set. The record holds the sender's username and name,
+which are personal data, and that is why it expires. List them with:
+
+```bash
+wrangler kv key list --binding SUBSCRIBERS --prefix feedback: --remote
+```
+
+A chat may send 3 notes an hour; a note is cut at 1,000 characters. Only text is
+accepted: photos, stickers and files are ignored, as they are everywhere else in
+the bot.
 
 ### Bot description
 
@@ -273,6 +309,7 @@ message field and suggests when someone types `/`. The Worker sets them from
    wrangler secret put WEBHOOK_SECRET      # any long random string
    wrangler secret put API_KEY             # read key: any long random string
    wrangler secret put ADMIN_KEY           # admin key: a different random string
+   wrangler secret put FEEDBACK_CHAT_ID    # optional: your own chat id, for /feedback
    ```
 
    `WEBHOOK_SECRET` proves an incoming update really came from Telegram. `API_KEY`
@@ -281,6 +318,12 @@ message field and suggests when someone types `/`. The Worker sets them from
    leak of the widely-used read key cannot spam or wipe subscribers. Until
    `ADMIN_KEY` is set the admin endpoints fall back to accepting `API_KEY`, so you
    can add it later without an outage.
+
+   `FEEDBACK_CHAT_ID` is the chat that receives `/feedback` notes, normally your
+   own private chat with the bot. Its id is the one in the report's
+   `TELEGRAM_CHAT_ID` secret if you send the digest to yourself, or the key of
+   your own `sub:` record once you have pressed `/start`. Without it, notes are
+   only stored in KV.
 
 3. **Deploy** so the new routes and binding go live:
 
@@ -332,7 +375,7 @@ be shared freely.
 
 | Route | Method | Access | Purpose |
 | --- | --- | --- | --- |
-| `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start`, `/pause`, `/stop` and the `/pause` buttons. |
+| `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start`, `/pause`, `/feedback`, `/stop` and the `/pause` buttons. |
 | `/subscribers` | GET | read | Chat ids to send the digest to — active subscribers not on pause: `{"subscribers": [...]}`. |
 | `/stats` | GET | read | Counts: `{"total", "active", "blocked", "stopped", "paused"}`; `paused` is part of `active`. |
 | `/deactivate` | POST | admin | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
