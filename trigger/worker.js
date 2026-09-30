@@ -10,6 +10,7 @@
 //
 // 2. Subscriptions. Telegram delivers bot updates to the webhook endpoint
 //    below. `/start` adds the chat to the subscriber list, `/stop` removes it,
+//    `/pause` holds its digest for a few days without removing it,
 //    and the daily report reads the active list (and reports blocked chats back)
 //    over the JSON endpoints. Chat ids are personal data and live only in KV,
 //    never in the repository.
@@ -88,7 +89,8 @@ function parseWelcome(raw) {
 
 // The reply to /start, worded for where the chat stands. `state` comes from
 // subscribe(): "new" for a first subscription, "active" for a chat that is
-// already subscribed, "returning" for one that had stopped or blocked the bot.
+// already subscribed, "resumed" for one whose digest was on /pause, and
+// "returning" for one that had stopped or blocked the bot.
 // `waitMin` is the minutes left before this chat may have another digest (see
 // welcomeWait); when it is above zero none follows and the reply has to say so
 // — the single reply this replaced promised a digest "in a minute" that then
@@ -105,6 +107,12 @@ function startReply(state, waitMin, record) {
       return (
         "Підписку знову відновлено! Схоже, вона кілька разів поспіль вмикалась " +
         `і вимикалась 😞. Новий дайджест буде за ${waitMin} хв, а попередній вище в чаті`
+      );
+    }
+    if (state === "resumed") {
+      return (
+        `Паузу знято – дайджест знову приходитиме о ${first} і ${second}. ` +
+        `Попередній вище в чаті, а новий можна отримати через ${waitMin} хв.`
       );
     }
     return (
@@ -124,6 +132,9 @@ function startReply(state, waitMin, record) {
       `З поверненням! Підписку відновлено – дайджест знову приходитиме о ${first} і ${second}. ` +
       "Ось актуальний."
     );
+  }
+  if (state === "resumed") {
+    return `Паузу знято! Дайджест знову приходитиме о ${first} і ${second}. Ось актуальний.`;
   }
   // sent_at is stored as "dd-mm-yyyy HH:MM" (Kyiv); the clock is its tail.
   const at = record && record.sent_at ? `, зібраний о ${record.sent_at.slice(-5)}` : "";
@@ -156,7 +167,7 @@ const STOP_REPLY =
   "Підписку скасовано, дайджест більше не надходитиме 😭. Щоб повернутися, надішли /start.";
 const HELP_REPLY =
   "Я надсилаю дайджест вакансій Product Design та UI/UX. " +
-  "Команди: /start – підписатися, /stop – відписатися";
+  "Команди: /start – підписатися, /pause – поставити на паузу, /stop – відписатися";
 
 // The bot's description: the text Telegram shows in an empty chat above the
 // Start button, so it is the first thing someone arriving from a shared link
@@ -206,6 +217,7 @@ function botShortDescription() {
 // suggests when someone types "/". The descriptions match HELP_REPLY.
 const BOT_COMMANDS = [
   { command: "start", description: "Підписатися й отримати свіжий дайджест" },
+  { command: "pause", description: "Поставити дайджест на паузу" },
   { command: "stop", description: "Відписатися від дайджесту" },
 ];
 
@@ -263,20 +275,25 @@ function authorizedAdmin(request, url, env) {
 
 // --- Telegram bot ----------------------------------------------------------
 
-async function reply(env, chatId, text) {
+// Call a Bot API method with a JSON body.
+async function telegram(env, method, body) {
+  return fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// Send a plain reply. `extra` adds fields to the sendMessage body, such as the
+// buttons /pause offers.
+async function reply(env, chatId, text, extra = {}) {
   if (!env.TELEGRAM_BOT_TOKEN) return;
-  await fetch(
-    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        disable_web_page_preview: true,
-      }),
-    },
-  );
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+    ...extra,
+  });
 }
 
 // Set the bot's description, short description and command list when they have
@@ -418,6 +435,8 @@ async function subscribe(env, chatId, from) {
     const since = existing.blocked ? existing.blocked_at : existing.stopped_at;
     if (since) gaps.push({ from: since, to: now, blocked: Boolean(existing.blocked) });
   }
+  // The record is rebuilt without paused_until as well, so a /start lifts any
+  // pause the chat had set.
   const record = {
     id: chatId,
     active: true,
@@ -431,7 +450,8 @@ async function subscribe(env, chatId, from) {
   await env.SUBSCRIBERS.put(key, JSON.stringify(record));
   // Where the chat stood before this /start, so the reply can match it.
   if (!existing) return "new";
-  return existing.active ? "active" : "returning";
+  if (!existing.active) return "returning";
+  return isPaused(existing) ? "resumed" : "active";
 }
 
 // Soft unsubscribe: the record is kept (marked inactive) so the stats still
@@ -445,6 +465,138 @@ async function unsubscribe(env, chatId) {
   await env.SUBSCRIBERS.put(key, JSON.stringify(existing));
 }
 
+// --- Pause -----------------------------------------------------------------
+//
+// /pause holds a chat's digest for a few days without unsubscribing it: a
+// holiday, or a search that is over for now. The chat stays active, so it
+// still counts as a subscriber in the stats and the bot's description, but
+// /subscribers leaves it out and the report sends it nothing until the pause
+// ends. The pause ends by itself, or earlier with /start or the button /pause
+// offers to a paused chat.
+//
+// The end is kept as a Kyiv calendar date, `paused_until`, rather than as a
+// moment. The digest goes out at fixed hours, so the date the digest comes
+// back is all the chat needs to know: it gets nothing before that date and
+// both digests on it.
+
+// The lengths /pause offers, in days. Each reads "N днів", the right plural
+// form for all three; a length such as 3 or 21 would need "дні" or "день".
+const PAUSE_DAYS = [7, 14, 30];
+
+const PAUSE_NOT_SUBSCRIBED =
+  "Підписки зараз немає, тож і ставити на паузу нічого. Щоб підписатися, надішли /start.";
+
+const KYIV_DATE = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Europe/Kyiv",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+// Today's date by the Kyiv clock, as "yyyy-mm-dd".
+function kyivToday(now = new Date()) {
+  const part = Object.fromEntries(KYIV_DATE.formatToParts(now).map((p) => [p.type, p.value]));
+  return `${part.year}-${part.month}-${part.day}`;
+}
+
+// The Kyiv date `days` after today, as "yyyy-mm-dd".
+function kyivDateAfter(days, now = new Date()) {
+  const [y, m, d] = kyivToday(now).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+const DAY_MONTH = new Intl.DateTimeFormat("uk-UA", {
+  timeZone: "UTC",
+  day: "numeric",
+  month: "long",
+});
+
+// "7 жовтня" for "2026-10-07".
+function dayMonth(date) {
+  return DAY_MONTH.format(new Date(`${date}T12:00:00Z`));
+}
+
+// Whether a chat's digest is on hold today.
+function isPaused(record, now = new Date()) {
+  return Boolean(record && record.paused_until) && kyivToday(now) < record.paused_until;
+}
+
+// The /pause message and its buttons. A chat already on pause is told when
+// the digest comes back, and offered to lift the pause instead of cancelling.
+function pausePrompt(record) {
+  const lengths = PAUSE_DAYS.map((n) => ({ text: `${n} днів`, callback_data: `pause:${n}` }));
+  if (isPaused(record)) {
+    return {
+      text:
+        `Дайджест на паузі до ${dayMonth(record.paused_until)}. ` +
+        "Можна поставити нову паузу, рахуючи від сьогодні, або зняти її.",
+      keyboard: [lengths, [{ text: "Зняти паузу", callback_data: "pause:off" }]],
+    };
+  }
+  return {
+    text:
+      "На скільки поставити дайджест на паузу? Підписка залишиться, " +
+      "а дайджести повернуться самі.",
+    keyboard: [lengths, [{ text: "Скасувати", callback_data: "pause:cancel" }]],
+  };
+}
+
+async function sendPausePrompt(env, chatId) {
+  const record = await env.SUBSCRIBERS.get(`sub:${chatId}`, "json");
+  if (!record || !record.active) {
+    await reply(env, chatId, PAUSE_NOT_SUBSCRIBED);
+    return;
+  }
+  const prompt = pausePrompt(record);
+  await reply(env, chatId, prompt.text, {
+    reply_markup: { inline_keyboard: prompt.keyboard },
+  });
+}
+
+// Carry out a choice from the /pause buttons (a length in days, "off" or
+// "cancel") and return the text that replaces the prompt.
+async function applyPause(env, chatId, choice) {
+  const key = `sub:${chatId}`;
+  const record = await env.SUBSCRIBERS.get(key, "json");
+  // The chat may have sent /stop since the prompt went out.
+  if (!record || !record.active) return PAUSE_NOT_SUBSCRIBED;
+  const [first, second] = reportTimesKyiv();
+  const days = Number(choice);
+  if (PAUSE_DAYS.includes(days)) {
+    record.paused_until = kyivDateAfter(days);
+    await env.SUBSCRIBERS.put(key, JSON.stringify(record));
+    return (
+      `Готово, дайджест на паузі. Він повернеться ${dayMonth(record.paused_until)} о ${first}. ` +
+      "Якщо захочеш раніше, надішли /start."
+    );
+  }
+  if (choice === "off" && record.paused_until) {
+    delete record.paused_until;
+    await env.SUBSCRIBERS.put(key, JSON.stringify(record));
+    return `Паузу знято, дайджест знову приходитиме о ${first} і ${second}.`;
+  }
+  return "Гаразд, дайджест приходитиме як і раніше.";
+}
+
+// A press on an inline button. Telegram keeps the button spinning until
+// answerCallbackQuery, so that goes first whatever the press was. The message
+// is then rewritten to say what was done, which also takes its buttons away,
+// so an old prompt cannot be pressed again.
+async function handleCallback(env, query) {
+  if (!env.TELEGRAM_BOT_TOKEN) return;
+  await telegram(env, "answerCallbackQuery", { callback_query_id: query.id });
+  const message = query.message;
+  const data = typeof query.data === "string" ? query.data : "";
+  if (!message || !message.chat || !data.startsWith("pause:")) return;
+  const chatId = String(message.chat.id);
+  const text = await applyPause(env, chatId, data.slice("pause:".length));
+  await telegram(env, "editMessageText", {
+    chat_id: chatId,
+    message_id: message.message_id,
+    text,
+  });
+}
+
 async function handleWebhook(request, env, ctx) {
   // Telegram sends the configured secret_token in this header; reject anything
   // that does not carry it, even though the URL already embeds the secret.
@@ -456,6 +608,9 @@ async function handleWebhook(request, env, ctx) {
     update = await request.json();
   } catch {
     return new Response("bad request\n", { status: 400 });
+  }
+  if (update.callback_query) {
+    await handleCallback(env, update.callback_query);
   }
   const msg = update.message || update.edited_message;
   if (msg && msg.chat && typeof msg.text === "string") {
@@ -492,6 +647,8 @@ async function handleWebhook(request, env, ctx) {
     } else if (text === "/stop" || text.startsWith("/stop ")) {
       await unsubscribe(env, chatId);
       await reply(env, chatId, STOP_REPLY);
+    } else if (text === "/pause" || text.startsWith("/pause ")) {
+      await sendPausePrompt(env, chatId);
     } else {
       await reply(env, chatId, HELP_REPLY);
     }
@@ -513,21 +670,30 @@ async function eachSubscriber(env, onRecord) {
   } while (cursor);
 }
 
+// The chats the report sends the digest to: every active subscriber except
+// those on /pause.
 async function listSubscribers(env) {
   const ids = [];
   await eachSubscriber(env, (record) => {
-    if (record.active) ids.push(record.id);
+    if (record.active && !isPaused(record)) ids.push(record.id);
   });
   return { subscribers: ids };
 }
 
+// `paused` is a part of `active`, not a fourth kind: a paused chat is still
+// subscribed.
 async function computeStats(env) {
-  const totals = { total: 0, active: 0, blocked: 0, stopped: 0 };
+  const totals = { total: 0, active: 0, blocked: 0, stopped: 0, paused: 0 };
   await eachSubscriber(env, (record) => {
     totals.total += 1;
-    if (record.active) totals.active += 1;
-    else if (record.blocked) totals.blocked += 1;
-    else totals.stopped += 1;
+    if (record.active) {
+      totals.active += 1;
+      if (isPaused(record)) totals.paused += 1;
+    } else if (record.blocked) {
+      totals.blocked += 1;
+    } else {
+      totals.stopped += 1;
+    }
   });
   return totals;
 }
