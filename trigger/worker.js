@@ -28,6 +28,9 @@
 //                       requires `?key=<TRIGGER_SECRET>`.
 //   FEEDBACK_CHAT_ID    optional; the owner's chat id, where /feedback notes
 //                       are sent. Without it they are only kept in KV.
+//   OWNER_CHAT_ID       optional; the owner's own Telegram id, the only chat
+//                       the /stats command answers. Kept as a secret rather
+//                       than in the code, because the repository is public.
 //   IGAMING_CHAT_IDS    no longer needed: the report now sends the list with
 //                       the stored digest. Read only as a fallback for a
 //                       digest stored before that, and safe to delete.
@@ -249,10 +252,13 @@ const SUBSCRIBER_COMMANDS = [
   { command: "feedback", description: "Написати відгук" },
   { command: "stop", description: "Відписатися від дайджесту" },
 ];
-// Raise by one whenever SUBSCRIBER_COMMANDS changes. A chat's record keeps the
-// version it was last given, and the cron tick resends the list to every
-// subscriber whose version differs.
-const MENU_VERSION = 1;
+// The owner's chat, OWNER_CHAT_ID, is given SUBSCRIBER_COMMANDS with /stats
+// added at the end. The list is set per chat, so no other chat sees it.
+const STATS_COMMAND = { command: "stats", description: "Статистика підписників" };
+// Raise by one whenever SUBSCRIBER_COMMANDS or STATS_COMMAND changes. A chat's
+// record keeps the version it was last given, and the cron tick resends the
+// list to every subscriber whose version differs.
+const MENU_VERSION = 2;
 
 async function dispatch(env, inputs) {
   const body = { ref: REF };
@@ -373,11 +379,19 @@ async function setIfChanged(env, method, key, body) {
 // (the MENU_VERSION it got, or absent), so the cron tick can find the chats
 // whose menu is out of date — a call that failed, a chat that subscribed before
 // the menu existed, or a new MENU_VERSION — and put them right.
+//
+// The owner's chat gets /stats in its list too. A change of OWNER_CHAT_ID alone
+// does not make any menu out of date, so after setting it the owner sends
+// /start, which sets the menu afresh. On /stop the owner's list is removed like
+// anyone's, and /stats then leaves the menu, though it still answers.
 async function setChatMenu(env, chatId, subscribed) {
   if (!env.TELEGRAM_BOT_TOKEN) return;
   const scope = { type: "chat", chat_id: chatId };
+  const commands = isOwnerChat(env, String(chatId))
+    ? [...SUBSCRIBER_COMMANDS, STATS_COMMAND]
+    : SUBSCRIBER_COMMANDS;
   const res = subscribed
-    ? await telegram(env, "setMyCommands", { commands: SUBSCRIBER_COMMANDS, scope })
+    ? await telegram(env, "setMyCommands", { commands, scope })
     : await telegram(env, "deleteMyCommands", { scope });
   if (!res.ok) return;
   const key = `sub:${chatId}`;
@@ -770,6 +784,70 @@ async function takeFeedback(env, msg, note) {
   await reply(env, chatId, FEEDBACK_THANKS);
 }
 
+// --- Owner stats -----------------------------------------------------------
+//
+// /stats gives the bot's owner the subscriber counts in Telegram, without
+// opening the dashboard, along with what changed over the last
+// STATS_WINDOW_DAYS. It answers only in OWNER_CHAT_ID; any other chat gets
+// the help reply, as for a command the bot does not know, and so does every
+// chat while OWNER_CHAT_ID is not set. FEEDBACK_CHAT_ID is not used for this:
+// it may one day point at a group, and the counts are for the owner alone. The reply carries
+// counts only, never chat ids or names. Each call walks the whole sub: prefix,
+// one KV read per chat, which is fine for a command only the owner sends.
+
+// The reply reads "N днів", the right plural form for 7; a window such as 3 or
+// 21 would need "дні" or "день".
+const STATS_WINDOW_DAYS = 7;
+
+function isOwnerChat(env, chatId) {
+  return Boolean(env.OWNER_CHAT_ID) && chatId === String(env.OWNER_CHAT_ID).trim();
+}
+
+// A chat counts as joined in the window when it first subscribed then; a chat
+// that stopped earlier and came back in the window does not. It counts as left
+// when it is inactive now and stopped or blocked the bot in the window, the
+// same moment computeStats goes by: blocked_at for a blocked chat, stopped_at
+// for the rest.
+async function ownerStats(env, now = Date.now()) {
+  const since = now - STATS_WINDOW_DAYS * 86400000;
+  const recent = (iso) => Boolean(iso) && Date.parse(iso) >= since;
+  let joined = 0;
+  let left = 0;
+  const totals = await computeStats(env, (record) => {
+    if (recent(record.first_seen)) joined += 1;
+    if (!record.active && recent(record.blocked ? record.blocked_at : record.stopped_at)) left += 1;
+  });
+  // A note's key is feedback:<ISO time>:<chat id>, so the time is read from
+  // the key without fetching the note. The time has colons of its own, so it
+  // is everything between the prefix and the last colon.
+  let feedback = 0;
+  let cursor;
+  do {
+    const page = await env.SUBSCRIBERS.list({ prefix: "feedback:", cursor });
+    for (const entry of page.keys) {
+      const at = entry.name.slice("feedback:".length, entry.name.lastIndexOf(":"));
+      if (recent(at)) feedback += 1;
+    }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor);
+  return { ...totals, joined, left, feedback };
+}
+
+// Each figure follows a colon, so it needs no plural form.
+function ownerStatsMessage(s) {
+  return (
+    "📊 Підписники\n" +
+    `Активні: ${s.active} (на паузі: ${s.paused})\n` +
+    `Скасували підписку: ${s.stopped}\n` +
+    `Заблокували бота: ${s.blocked}\n` +
+    `Усього за весь час: ${s.total}\n\n` +
+    `За останні ${STATS_WINDOW_DAYS} днів\n` +
+    `Нові: ${s.joined}\n` +
+    `Пішли: ${s.left}\n` +
+    `Відгуки: ${s.feedback}`
+  );
+}
+
 async function handleWebhook(request, env, ctx) {
   // Telegram sends the configured secret_token in this header; reject anything
   // that does not carry it, even though the URL already embeds the secret.
@@ -830,6 +908,8 @@ async function handleWebhook(request, env, ctx) {
       const note = text.slice("/feedback".length).trim();
       if (note) await takeFeedback(env, msg, note);
       else await askFeedback(env, chatId);
+    } else if ((text === "/stats" || text.startsWith("/stats ")) && isOwnerChat(env, chatId)) {
+      await reply(env, chatId, ownerStatsMessage(await ownerStats(env)));
     } else if (!text.startsWith("/") && (await env.SUBSCRIBERS.get(`${FEEDBACK_WAIT_PREFIX}${chatId}`))) {
       await takeFeedback(env, msg, text);
     } else {
