@@ -158,6 +158,7 @@ filled in when the reply is sent:
 | `/feedback` alone | Напиши наступним повідомленням, що варто покращити або що не так. Відгук отримає автор бота. | — |
 | `/feedback` with text, or the next message after it | Дякую, відгук надіслано 🙌 | — |
 | `/feedback` — more than 3 in an hour | Цей відгук не надіслано: за годину можна надіслати до 3. Спробуй трохи згодом. | — |
+| `/stats` — from `OWNER_CHAT_ID` | the subscriber counts, see [Owner stats](#owner-stats) | — |
 | `/stop` | Підписку скасовано, дайджест більше не надходитиме 😭. Якщо щось було не так, розкажи через /feedback. Щоб повернутися, надішли /start. | — |
 | any other text — subscribed | Я надсилаю дайджест вакансій Product Design та UI/UX. Команди: /digest – свіжий дайджест, /pause – поставити на паузу, /feedback – написати відгук, /stop – відписатися | — |
 | any other text — not subscribed | Я надсилаю дайджест вакансій Product Design та UI/UX. Щоб підписатися, надішли /start. Відгук чи ідею можна надіслати через /feedback. | — |
@@ -237,6 +238,38 @@ wrangler kv key list --binding SUBSCRIBERS --prefix feedback: --remote
 A chat may send 3 notes an hour; a note is cut at 1,000 characters. Only text is
 accepted: photos, stickers and files are ignored, as they are everywhere else in
 the bot.
+
+### Owner stats
+
+`/stats` sent from `OWNER_CHAT_ID`, the owner's own Telegram id, answers with
+the subscriber counts and what changed over the last 7 days, so the owner can
+check on the bot from Telegram instead of opening the dashboard:
+
+> 📊 Підписники\
+> Активні: 5 (на паузі: 0)\
+> Скасували підписку: 0\
+> Заблокували бота: 0\
+> Усього за весь час: 5
+>
+> За останні 7 днів\
+> Нові: 1\
+> Пішли: 0\
+> Відгуки: 0
+
+The first block is the same as the `/stats` endpoint returns; a paused chat is
+also counted as active. *Нові* are chats that first subscribed in the window, so
+a chat coming back after `/stop` is not counted again. *Пішли* are chats that
+are unsubscribed now and stopped or blocked the bot in the window. *Відгуки* are
+the `/feedback` notes received in the window, counted from their KV keys.
+
+The reply holds counts only, no chat ids or names. Any other chat that sends
+`/stats` gets the ordinary help reply, as for a command the bot does not know,
+and the command is only in the owner's menu (see [Bot commands](#bot-commands)). Without `OWNER_CHAT_ID` no chat gets
+the counts. `FEEDBACK_CHAT_ID` is deliberately not reused for this, since it
+could point at a group, and the id is a secret rather than a constant in the
+code because this repository is public. The reply is built by `ownerStats()` and
+`ownerStatsMessage()` in [`worker.js`](worker.js); `STATS_WINDOW_DAYS` sets the
+window.
 
 ### Bot description
 
@@ -318,6 +351,17 @@ but leaves the subscription as it is. It is the Telegram command, not the
 `/digest` endpoint the report posts to. `/start` keeps working for subscribers
 too; it only leaves their menu, where "subscribe" would read oddly.
 
+The owner's chat, `OWNER_CHAT_ID`, gets the same list with `STATS_COMMAND` added
+at the end, so `/stats` shows in the owner's menu and in no one else's:
+
+| Command  | Description              |
+| -------- | ------------------------ |
+| `/stats` | Статистика підписників   |
+
+Setting or changing `OWNER_CHAT_ID` does not by itself update any menu, so send
+`/start` from the owner's chat afterwards. After `/stop` the owner's chat loses
+its own list like any other, and `/stats` leaves the menu but still answers.
+
 The Worker sets a chat's own list with `setMyCommands` and a `chat` scope on every
 `/start`, and removes it with `deleteMyCommands` on `/stop`, which brings back the
 bot's list. What Telegram last accepted is kept on the chat's `sub:` record as
@@ -325,8 +369,9 @@ bot's list. What Telegram last accepted is kept on the chat's `sub:` record as
 counting subscribers, the Worker picks out the chats whose `menu` does not match
 where they stand and puts up to 20 of them right: a call that failed, a chat
 that subscribed before the menu existed, or a new `MENU_VERSION`. Raise
-`MENU_VERSION` whenever `SUBSCRIBER_COMMANDS` changes, and the tick rolls the new
-list out to every subscriber, 20 chats per tick. Blocked chats are skipped.
+`MENU_VERSION` whenever `SUBSCRIBER_COMMANDS` or `STATS_COMMAND` changes, and the
+tick rolls the new list out to every subscriber, 20 chats per tick. Blocked chats
+are skipped.
 
 Telegram clients may keep showing the old list until the chat is reopened.
 
@@ -348,6 +393,7 @@ Telegram clients may keep showing the old list until the chat is reopened.
    wrangler secret put API_KEY             # read key: any long random string
    wrangler secret put ADMIN_KEY           # admin key: a different random string
    wrangler secret put FEEDBACK_CHAT_ID    # optional: your own chat id, for /feedback
+   wrangler secret put OWNER_CHAT_ID       # optional: your own Telegram id, for /stats
    ```
 
    `WEBHOOK_SECRET` proves an incoming update really came from Telegram. `API_KEY`
@@ -362,6 +408,10 @@ Telegram clients may keep showing the old list until the chat is reopened.
    `TELEGRAM_CHAT_ID` secret if you send the digest to yourself, or the key of
    your own `sub:` record once you have pressed `/start`. Without it, notes are
    only stored in KV.
+
+   `OWNER_CHAT_ID` is your own Telegram id, the only chat the `/stats` command
+   answers (see [Owner stats](#owner-stats)). In a private chat with the bot it
+   is the same number as the chat id. Without it `/stats` answers no one.
 
 3. **Deploy** so the new routes and binding go live:
 
@@ -413,7 +463,7 @@ be shared freely.
 
 | Route | Method | Access | Purpose |
 | --- | --- | --- | --- |
-| `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start`, `/digest`, `/pause`, `/feedback`, `/stop` and the `/pause` buttons. |
+| `/telegram/<WEBHOOK_SECRET>` | POST | secret path | Telegram webhook: handles `/start`, `/digest`, `/pause`, `/feedback`, `/stop`, the `/pause` buttons and the owner's `/stats`. |
 | `/subscribers` | GET | read | Chat ids to send the digest to — active subscribers not on pause: `{"subscribers": [...]}`. |
 | `/stats` | GET | read | Counts: `{"total", "active", "blocked", "stopped", "paused"}`; `paused` is part of `active`. |
 | `/deactivate` | POST | admin | Retire ids that blocked the bot: `{"chat_ids": [...]}`. |
