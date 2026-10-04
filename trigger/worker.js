@@ -29,7 +29,8 @@
 //   FEEDBACK_CHAT_ID    optional; the owner's chat id, where /feedback notes
 //                       are sent. Without it they are only kept in KV.
 //   OWNER_CHAT_ID       optional; the owner's own Telegram id, the only chat
-//                       the /stats command answers. Kept as a secret rather
+//                       the /stats command answers, and the chat told when
+//                       GitHub refuses a cron dispatch. Kept as a secret rather
 //                       than in the code, because the repository is public.
 //   IGAMING_CHAT_IDS    no longer needed: the report now sends the list with
 //                       the stored digest. Read only as a fallback for a
@@ -279,6 +280,54 @@ async function dispatch(env, inputs) {
   );
 }
 
+// How often a failed cron dispatch is reported to the owner. GitHub refuses the
+// dispatch when GH_TOKEN has expired, or was regenerated on GitHub without the
+// new value being stored here; on 2 October 2026 that stopped the digest for two
+// days unnoticed, because nothing read the response. A broken token fails every
+// tick, so the alert repeats once per window rather than every half hour, for as
+// long as the failure lasts.
+const DISPATCH_ALERT_WINDOW_SEC = 6 * 3600;
+
+// Dispatch from the cron tick and tell the owner when it fails. The alert goes
+// to OWNER_CHAT_ID as plain text; without that secret the failure is only
+// logged, where `wrangler tail` shows it.
+async function dispatchFromCron(env, inputs, isReport) {
+  let detail;
+  try {
+    const res = await dispatch(env, inputs);
+    if (res.ok) return;
+    detail = `HTTP ${res.status}${await githubReason(res)}`;
+  } catch (err) {
+    detail = String(err);
+  }
+  console.error(`dispatch failed: ${detail}`);
+  if (!env.OWNER_CHAT_ID) return;
+  if (await rateLimited(env, "dispatch_alert", 1, DISPATCH_ALERT_WINDOW_SEC)) return;
+  await reply(env, String(env.OWNER_CHAT_ID).trim(), dispatchAlert(isReport, detail));
+}
+
+// GitHub's reason for a refusal, such as "Bad credentials", read from the JSON
+// body it sends with one. Empty when there is none to read.
+async function githubReason(res) {
+  try {
+    const body = await res.json();
+    return body && body.message ? `: ${body.message}` : "";
+  } catch {
+    return "";
+  }
+}
+
+// "год" rather than the full word, so the count needs no plural form.
+function dispatchAlert(isReport, detail) {
+  const what = isReport ? "розсилку дайджесту" : "оновлення дайджесту";
+  return (
+    `⚠️ Не вдалося запустити ${what} (${detail}).\n\n` +
+    "Найчастіше причина в GH_TOKEN: термін дії минув або токен перегенерували на GitHub. " +
+    "Новий токен записують у Worker командою wrangler secret put GH_TOKEN у теці trigger/. " +
+    `Поки збій триває, це повідомлення повторюватиметься раз на ${DISPATCH_ALERT_WINDOW_SEC / 3600} год.`
+  );
+}
+
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
@@ -411,8 +460,8 @@ function menuOutOfDate(record) {
 
 // How many chats one cron tick may bring up to date. Each costs one call to
 // Telegram, and a tick shares Cloudflare's cap of 50 outgoing requests per
-// invocation with the dispatch and the bot's profile. The rest wait for the
-// next tick, half an hour later.
+// invocation with the dispatch, its failure alert and the bot's profile. The
+// rest wait for the next tick, half an hour later.
 const MENU_SYNC_PER_TICK = 20;
 
 async function syncChatMenus(env, records) {
@@ -1367,7 +1416,8 @@ const TICK_SPAN_UTC = [[6, 0], [20, 30]];
 
 export default {
   // Fired by the crons declared in wrangler.toml. A successful dispatch returns
-  // HTTP 204 with an empty body. It also records the day's subscriber snapshot
+  // HTTP 204 with an empty body; any other outcome is reported to the owner (see
+  // dispatchFromCron). It also records the day's subscriber snapshot
   // and keeps the bot's description, which carries the count, up to date, along
   // with its short description and command list, and the menus of up to
   // MENU_SYNC_PER_TICK chats whose own command list is out of date.
@@ -1384,7 +1434,7 @@ export default {
     const at = new Date(event.scheduledTime);
     const isReport = at.getUTCMinutes() === 0 && REPORT_HOURS_KYIV.includes(kyivHour(at));
     const inputs = isReport ? undefined : { refresh_only: "true" };
-    ctx.waitUntil(dispatch(env, inputs));
+    ctx.waitUntil(dispatchFromCron(env, inputs, isReport));
     const stale = [];
     const collect = (record) => {
       if (menuOutOfDate(record)) stale.push(record);
