@@ -174,7 +174,7 @@ def test_build_report_structure_and_counts():
     assert "# Design вакансії — 14-09-2026" in report
     assert "## 🟣 iGaming (1)" in report
     # The per-source headings show kept/scanned from totals.
-    assert "## 🟠 Вакансії Djinni (1/89)" in report
+    assert "## 🔵 Вакансії Djinni (1/89)" in report
     assert "## 🟢 Вакансії DOU (1/226)" in report
 
 
