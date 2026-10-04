@@ -477,6 +477,20 @@ def test_collect_recipients_subscribers_only(monkeypatch):
     assert dr.collect_recipients() == ["7", "8"]
 
 
+# --- mask_chat_ids ---------------------------------------------------------
+
+def test_mask_chat_ids_registers_each_id_in_actions(monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    dr.mask_chat_ids(["123456789", "987654321"])
+    assert capsys.readouterr().out == "::add-mask::123456789\n::add-mask::987654321\n"
+
+
+def test_mask_chat_ids_prints_nothing_outside_actions(monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    dr.mask_chat_ids(["123456789"])
+    assert capsys.readouterr().out == ""
+
+
 # --- deactivate_subscribers ------------------------------------------------
 
 def test_deactivate_posts_ids(monkeypatch):

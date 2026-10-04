@@ -54,6 +54,15 @@ jobs:
         if: github.event.inputs.only_chat_id == '' && github.event.inputs.refresh_only == ''
         run: pip install -r requirements.txt
 
+      # A welcome run's chat id arrives as a workflow input, and inputs are not
+      # secrets, so the next step's env listing would print it in this public
+      # log. Register it as a mask first. It is read from the event payload, not
+      # through an expression, because the log shows a step's script with its
+      # expressions already filled in.
+      - name: Mask the welcome chat id
+        if: github.event.inputs.only_chat_id != ''
+        run: echo "::add-mask::$(jq -r '.inputs.only_chat_id' "$GITHUB_EVENT_PATH")"
+
       - name: Generate report and send to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

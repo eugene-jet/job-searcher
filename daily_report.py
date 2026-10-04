@@ -426,6 +426,25 @@ def collect_recipients():
     return recipients
 
 
+def mask_chat_ids(chat_ids):
+    """Hide chat ids from the GitHub Actions log, which is public for this repo.
+
+    Chat ids are personal data (see ``fetch_subscribers``), yet the delivery
+    lines and send errors name the chat they are about. GitHub masks only
+    secrets, and a secret only as its whole value, so the subscriber ids from the
+    Worker, and each id of a comma-separated ``TELEGRAM_CHAT_ID``, would show in
+    plain text. Each id is registered with ``::add-mask::``, after which the
+    runner prints it as ``***`` on stdout and stderr alike. Flushed at once, so
+    the masks are in place before a send error can reach stderr. A local run
+    prints nothing here and keeps the ids readable.
+    """
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    for chat_id in chat_ids:
+        print("::add-mask::%s" % chat_id)
+    sys.stdout.flush()
+
+
 def igaming_recipients():
     """Chat ids allowed to see the iGaming block, from ``IGAMING_CHAT_IDS``.
 
@@ -680,6 +699,7 @@ def main():
     # just one chat. It skips analytics, the report file and the subscriber
     # fan-out, so it leaves no daily-report commit and no analytics rows behind.
     if only_chat:
+        mask_chat_ids([only_chat])
         if token:
             full, reduced = variants()
             messages = select_messages(only_chat, allow_igaming, full, reduced)
@@ -733,6 +753,7 @@ def main():
     # collect_recipients. Delivery is skipped locally, where no token is set.
     if token:
         recipients = collect_recipients()
+        mask_chat_ids(recipients)
         if recipients:
             # Full report keeps iGaming as its own top block; the reduced report
             # folds iGaming vacancies back into Djinni/DOU. IGAMING_CHAT_IDS
