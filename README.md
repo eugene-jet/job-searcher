@@ -29,7 +29,7 @@ dated file such as
 > 🕒 **26-09-2026 21:00** (Київ)\
 > За останні 3 дні (24/26-09-2026)
 >
-> **🟠 Djinni (6/72)**\
+> **🔵 Djinni (6/72)**\
 > ⦿ **25-09-2026**\
 > • Product UI/UX Designer — Asocial · Remote\
 > • UX/UI Product Designer — B2BSoft · Remote\
