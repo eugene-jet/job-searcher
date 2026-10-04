@@ -27,6 +27,10 @@ never in this repository. See [Subscription bot](#subscription-bot) below.
 1. **Create a GitHub token.** In GitHub → Settings → Developer settings →
    Fine-grained tokens, create a token scoped to the `job-searcher` repository
    with **Repository permissions → Actions: Read and write**. Copy it.
+   Fine-grained tokens expire, and regenerating one on GitHub invalidates the
+   old value at once, so whenever you renew the token, store the new value as in
+   step 3. Until you do, every dispatch fails (see
+   [When a dispatch fails](#when-a-dispatch-fails)).
 
 2. **Install and log in to Wrangler** (Cloudflare's CLI):
 
@@ -411,7 +415,9 @@ Telegram clients may keep showing the old list until the chat is reopened.
 
    `OWNER_CHAT_ID` is your own Telegram id, the only chat the `/stats` command
    answers (see [Owner stats](#owner-stats)). In a private chat with the bot it
-   is the same number as the chat id. Without it `/stats` answers no one.
+   is the same number as the chat id. Without it `/stats` answers no one. It
+   is also the chat the Worker alerts when GitHub refuses a cron dispatch (see
+   [When a dispatch fails](#when-a-dispatch-fails)).
 
 3. **Deploy** so the new routes and binding go live:
 
@@ -548,3 +554,33 @@ duplicate runs. The workflow keeps `workflow_dispatch: {}`, which is the entry
 point the Worker uses and also lets you run the report manually from the Actions
 tab. **Deploy this Worker before relying on the schedule**: with the GitHub cron
 gone, nothing fires the report until the Worker is live.
+
+### When a dispatch fails
+
+Because nothing else starts the workflow, a dispatch that GitHub refuses stops
+the digest altogether: no report, no refresh, and a stored digest that grows
+older by the hour. The usual cause is `GH_TOKEN`. It fails once the token
+expires, and also once it is regenerated on GitHub while the Worker still holds
+the old value. On 2 October 2026 a regenerated token stopped the digest for two
+days before anyone noticed, because the cron tick never looked at GitHub's
+answer.
+
+The tick now checks that answer. When the dispatch fails, the Worker sends
+`OWNER_CHAT_ID` a plain-text alert in Telegram with the HTTP status and GitHub's
+reason, for example `HTTP 401: Bad credentials`. A broken token fails on every
+tick, so the alert repeats at most once every six hours
+(`DISPATCH_ALERT_WINDOW_SEC`) for as long as the failure lasts, rather than
+every half hour. Without `OWNER_CHAT_ID` the failure is only logged, where
+`wrangler tail` shows it.
+
+To fix a token failure, generate a new token (or regenerate the old one) with
+the same permissions and store it:
+
+```bash
+cd trigger
+wrangler secret put GH_TOKEN
+```
+
+The secret takes effect at once, with no deploy, and the next tick dispatches
+as usual. A report tick missed meanwhile is not repeated, so send the missed
+digest by hand from the Actions tab if it matters.
