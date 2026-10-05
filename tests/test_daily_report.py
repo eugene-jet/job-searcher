@@ -176,6 +176,15 @@ def test_build_report_structure_and_counts():
     # The per-source headings show kept/scanned from totals.
     assert "## 🔵 Вакансії Djinni (1/89)" in report
     assert "## 🟢 Вакансії DOU (1/226)" in report
+    # Each source heading links to the board's full listing; iGaming does not.
+    assert (
+        "## 🔵 Вакансії Djinni (1/89) · [Всі вакансії →](%s)"
+        % dr.scrapers.DJINNI_URLS[0]
+    ) in report
+    assert (
+        "## 🟢 Вакансії DOU (1/226) · [Всі вакансії →](%s)" % dr.scrapers.DOU_URL
+    ) in report
+    assert "## 🟣 iGaming (1)\n" in report
 
 
 def test_build_report_shows_errors_and_empty_sections():
@@ -208,6 +217,44 @@ def test_telegram_single_message_for_small_input():
     )
     assert len(msgs) == 1
     assert "<b>Design вакансії" in msgs[0]
+
+
+def test_telegram_source_heading_links_to_all_vacancies():
+    msgs = dr.build_telegram_messages(
+        today="2026-09-14",
+        cutoff="2026-09-12",
+        igaming=[_vac(title="iGaming Designer", url="https://x/ig")],
+        djinni=[_vac()],
+        dou=[_vac(source="dou", url="https://x/9")],
+        sent_at="14-09-2026 21:00",
+        totals={"djinni": 59, "dou": 218},
+    )
+    body = "\n".join(msgs)
+    # The "&" between the Djinni query parameters is escaped for Telegram HTML.
+    djinni_href = dr.scrapers.DJINNI_URLS[0].replace("&", "&amp;")
+    assert (
+        '<b>🔵 Djinni (1/59)</b> · <a href="%s">Всі вакансії →</a>' % djinni_href
+    ) in body
+    assert (
+        '<b>🟢 DOU (1/218)</b> · <a href="%s">Всі вакансії →</a>'
+        % dr.scrapers.DOU_URL
+    ) in body
+    assert "<b>🟣 iGaming (1)</b>\n" in body
+
+
+def test_telegram_hides_empty_source_block_with_its_link():
+    msgs = dr.build_telegram_messages(
+        today="2026-09-14",
+        cutoff="2026-09-12",
+        igaming=[],
+        djinni=[_vac()],
+        dou=[],
+        sent_at="14-09-2026 21:00",
+        totals={"djinni": 59, "dou": 218},
+    )
+    body = "\n".join(msgs)
+    assert "DOU" not in body
+    assert dr.scrapers.DOU_URL not in body
 
 
 def test_telegram_splits_and_respects_limit():
