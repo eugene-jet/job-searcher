@@ -57,6 +57,12 @@ WEEK_DAYS = 7
 
 SOURCE_LABEL = {"dou": "DOU", "djinni": "Djinni"}
 
+# The board listing each source section links to as "Всі вакансії". These are
+# the same pages the scrapers read, so the listing a reader opens holds the
+# scanned total shown in the section heading.
+SOURCE_ALL_URL = {"dou": scrapers.DOU_URL, "djinni": scrapers.DJINNI_URLS[0]}
+ALL_VACANCIES_LABEL = "Всі вакансії →"
+
 # Cloudflare fronts the subscriber Worker and answers the default urllib
 # User-Agent with a 403, so requests to the Worker send an explicit one.
 WORKER_USER_AGENT = "job-searcher-report"
@@ -128,13 +134,17 @@ def vac_line(vac, with_source):
     return line
 
 
-def _section(out, heading, items, with_source, total=None):
+def _section(out, heading, items, with_source, total=None, all_url=None):
     # ``total`` is the raw number of vacancies the board returned before the
     # relevance filter; when given, the heading shows "shown/scanned".
+    # ``all_url``, when given, appends a link to the board's full listing.
     if total is None:
-        out.append("## %s (%d)" % (heading, len(items)))
+        title = "## %s (%d)" % (heading, len(items))
     else:
-        out.append("## %s (%d/%d)" % (heading, len(items), total))
+        title = "## %s (%d/%d)" % (heading, len(items), total)
+    if all_url:
+        title += " · [%s](%s)" % (ALL_VACANCIES_LABEL, all_url)
+    out.append(title)
     out.append("")
     if not items:
         out.append("_Немає за період._")
@@ -176,8 +186,14 @@ def build_report(today, cutoff, igaming, djinni, dou, errors, sent_at, totals):
     # iGaming matches are pulled out of the per-source blocks and shown first.
     if igaming:
         _section(out, "🟣 iGaming", igaming, with_source=True)
-    _section(out, "🔵 Вакансії Djinni", djinni, with_source=False, total=totals.get("djinni"))
-    _section(out, "🟢 Вакансії DOU", dou, with_source=False, total=totals.get("dou"))
+    _section(
+        out, "🔵 Вакансії Djinni", djinni, with_source=False,
+        total=totals.get("djinni"), all_url=SOURCE_ALL_URL["djinni"],
+    )
+    _section(
+        out, "🟢 Вакансії DOU", dou, with_source=False,
+        total=totals.get("dou"), all_url=SOURCE_ALL_URL["dou"],
+    )
     return "\n".join(out)
 
 
@@ -231,14 +247,18 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals
         "За останні %d дні (%s/%s)" % (WINDOW_DAYS, _fmt_date(cutoff)[:2], _fmt_date(today)),
     ]
 
-    def add_block(heading, items, with_source, total=None):
+    def add_block(heading, items, with_source, total=None, all_url=None):
         if not items:
             return
         lines.append("")
         if total is None:
-            lines.append("<b>%s (%d)</b>" % (heading, len(items)))
+            title = "<b>%s (%d)</b>" % (heading, len(items))
         else:
-            lines.append("<b>%s (%d/%d)</b>" % (heading, len(items), total))
+            title = "<b>%s (%d/%d)</b>" % (heading, len(items), total)
+        if all_url:
+            # The Djinni listing URL carries "&" between query parameters.
+            title += ' · <a href="%s">%s</a>' % (_esc(all_url), ALL_VACANCIES_LABEL)
+        lines.append(title)
         last = None
         for v in items:
             date = _fmt_date(v.get("date_posted") or "—")
@@ -248,8 +268,8 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals
             lines.append(_tg_vac_line(v, with_source))
 
     add_block("🟣 iGaming", igaming, True)
-    add_block("🔵 Djinni", djinni, False, totals.get("djinni"))
-    add_block("🟢 DOU", dou, False, totals.get("dou"))
+    add_block("🔵 Djinni", djinni, False, totals.get("djinni"), SOURCE_ALL_URL["djinni"])
+    add_block("🟢 DOU", dou, False, totals.get("dou"), SOURCE_ALL_URL["dou"])
 
     if not igaming and not djinni and not dou:
         lines.append("")
