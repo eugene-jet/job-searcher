@@ -29,7 +29,7 @@ dated file such as
 > 🕒 **26-09-2026 21:00** (Київ)\
 > За останні 3 дні (24/26-09-2026)
 >
-> **🔵 Djinni (6/72)** · [Всі вакансії →](https://djinni.co/jobs/?search_type=basic-search&primary_keyword=Product%20Design&primary_keyword=UI%20UX)\
+> **🔵 Djinni (6/72)** · **[👉 Всі вакансії](https://djinni.co/jobs/?search_type=basic-search&primary_keyword=Product%20Design&primary_keyword=UI%20UX)**\
 > ⦿ **25-09-2026**\
 > • Product UI/UX Designer — Asocial · Remote\
 > • UX/UI Product Designer — B2BSoft · Remote\
@@ -39,7 +39,7 @@ dated file such as
 > • Trainee/Junior UX/UI Designer — BasMar Software · UA\
 > • UI/UX Designer — Vista Auction · Remote
 >
-> **🟢 DOU (3/261)** · [Всі вакансії →](https://jobs.dou.ua/vacancies/?category=Design)\
+> **🟢 DOU (3/261)** · **[👉 Всі вакансії](https://jobs.dou.ua/vacancies/?category=Design)**\
 > ⦿ **25-09-2026**\
 > • Senior Product Designer — WhiteTech · віддалено\
 > • UI/UX Designer — VCHASNO GROUP · Київ, віддалено\

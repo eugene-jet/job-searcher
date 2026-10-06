@@ -61,7 +61,7 @@ SOURCE_LABEL = {"dou": "DOU", "djinni": "Djinni"}
 # the same pages the scrapers read, so the listing a reader opens holds the
 # scanned total shown in the section heading.
 SOURCE_ALL_URL = {"dou": scrapers.DOU_URL, "djinni": scrapers.DJINNI_URLS[0]}
-ALL_VACANCIES_LABEL = "Всі вакансії →"
+ALL_VACANCIES_LABEL = "👉 Всі вакансії"
 
 # Cloudflare fronts the subscriber Worker and answers the default urllib
 # User-Agent with a 403, so requests to the Worker send an explicit one.
@@ -257,7 +257,13 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals
             title = "<b>%s (%d/%d)</b>" % (heading, len(items), total)
         if all_url:
             # The Djinni listing URL carries "&" between query parameters.
-            title += ' · <a href="%s">%s</a>' % (_esc(all_url), ALL_VACANCIES_LABEL)
+            # Telegram draws every link in the theme's link colour and has no
+            # markup for another one, so the link is bold to stand apart from
+            # the vacancy-title links below it.
+            title += ' · <b><a href="%s">%s</a></b>' % (
+                _esc(all_url),
+                ALL_VACANCIES_LABEL,
+            )
         lines.append(title)
         last = None
         for v in items:
