@@ -178,11 +178,11 @@ def test_build_report_structure_and_counts():
     assert "## 🟢 Вакансії DOU (1/226)" in report
     # Each source heading links to the board's full listing; iGaming does not.
     assert (
-        "## 🔵 Вакансії Djinni (1/89) · [👉 Всі вакансії →](%s)"
+        "## 🔵 Вакансії Djinni (1/89) · [👉 Всі вакансії](%s)"
         % dr.scrapers.DJINNI_URLS[0]
     ) in report
     assert (
-        "## 🟢 Вакансії DOU (1/226) · [👉 Всі вакансії →](%s)" % dr.scrapers.DOU_URL
+        "## 🟢 Вакансії DOU (1/226) · [👉 Всі вакансії](%s)" % dr.scrapers.DOU_URL
     ) in report
     assert "## 🟣 iGaming (1)\n" in report
 
@@ -233,10 +233,10 @@ def test_telegram_source_heading_links_to_all_vacancies():
     # The "&" between the Djinni query parameters is escaped for Telegram HTML.
     djinni_href = dr.scrapers.DJINNI_URLS[0].replace("&", "&amp;")
     assert (
-        '<b>🔵 Djinni (1/59)</b> · <b><a href="%s">👉 Всі вакансії →</a></b>' % djinni_href
+        '<b>🔵 Djinni (1/59)</b> · <b><a href="%s">👉 Всі вакансії</a></b>' % djinni_href
     ) in body
     assert (
-        '<b>🟢 DOU (1/218)</b> · <b><a href="%s">👉 Всі вакансії →</a></b>'
+        '<b>🟢 DOU (1/218)</b> · <b><a href="%s">👉 Всі вакансії</a></b>'
         % dr.scrapers.DOU_URL
     ) in body
     assert "<b>🟣 iGaming (1)</b>\n" in body

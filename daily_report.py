@@ -61,7 +61,7 @@ SOURCE_LABEL = {"dou": "DOU", "djinni": "Djinni"}
 # the same pages the scrapers read, so the listing a reader opens holds the
 # scanned total shown in the section heading.
 SOURCE_ALL_URL = {"dou": scrapers.DOU_URL, "djinni": scrapers.DJINNI_URLS[0]}
-ALL_VACANCIES_LABEL = "👉 Всі вакансії →"
+ALL_VACANCIES_LABEL = "👉 Всі вакансії"
 
 # Cloudflare fronts the subscriber Worker and answers the default urllib
 # User-Agent with a 403, so requests to the Worker send an explicit one.
