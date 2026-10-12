@@ -56,9 +56,6 @@ dated file such as
   and drops the rest (see [Filter](#filter)).
 - **Only what's fresh.** A rolling three-day window by each board's own posting
   date, so you never re-read yesterday's list.
-- **iGaming surfaced.** Vacancies mentioning iGaming — matched across title,
-  company, location, and the full job description — are pulled into their own
-  block at the top.
 - **Punctual delivery.** A Cloudflare Worker cron fires within about a minute of
   the scheduled time; GitHub Actions' own scheduler was dropped because it ran
   best-effort and often fired hours late.

@@ -162,7 +162,7 @@ def test_parse_djinni_ld_extracts_fields_and_remote():
         "hiringOrganization": {"name": "Initech"},
         "jobLocationType": "TELECOMMUTE",
         "datePosted": "2026-09-08T11:33:14.49",
-        "description": "We build <b>iGaming</b> products.",
+        "description": "We build <b>fintech</b> products.",
     }
     items = scrapers._parse_djinni_ld(_djinni_html(posting))
     assert len(items) == 1
@@ -174,7 +174,7 @@ def test_parse_djinni_ld_extracts_fields_and_remote():
     assert v["url"] == "https://djinni.co/jobs/555-product-designer/"
     assert v["location"] == "Remote"
     assert v["date_posted"] == "2026-09-08"
-    assert "iGaming" in v["description"]
+    assert "fintech" in v["description"]
 
 
 def test_parse_djinni_ld_non_remote_uses_country():

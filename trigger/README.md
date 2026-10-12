@@ -98,16 +98,15 @@ background dispatch is capped at one per 15 minutes so a burst of `/start`
 messages cannot pile up runs.
 
 Both report variants are stored, because the Worker decides which one a chat may
-see. It decides with the list of chats allowed the iGaming block that the report
-sends along with the digest — the very `IGAMING_CHAT_IDS` its scheduled delivery
-reads — so `/start` and the twice-daily digest always agree. An empty list means
-no restriction and everybody gets the full variant.
+see. It decides with the list of chats allowed the highlight block that the
+report sends along with the digest — the very `HIGHLIGHT_CHAT_IDS` its scheduled
+delivery reads — so `/start` and the twice-daily digest always agree. An empty
+list means no restriction and everybody gets the full variant; a stored digest
+that has a reduced variant but no list gives everybody the reduced one.
 
 The Worker used to keep its own copy of that list as a secret, entered by hand.
 The two copies drifted, and `/start` withheld the block from a chat the scheduled
-digest showed it to. A Worker secret named `IGAMING_CHAT_IDS` is now read only as
-a fallback for a digest stored before the list travelled with it, and can be
-deleted.
+digest showed it to, so the Worker no longer keeps one.
 
 If nothing is stored yet — the first deploy, or a cleared namespace — the Worker
 falls back to the old path and dispatches `daily.yml` with `only_chat_id`, which
@@ -518,7 +517,7 @@ The digest the bot serves on `/start` is also readable in a browser at
 renders whatever is currently stored, which the report refreshes every half
 hour, so the link always shows the same vacancies a new subscriber would get.
 
-Visitors see the reduced variant — the one a chat outside `IGAMING_CHAT_IDS`
+Visitors see the reduced variant — the one a chat outside `HIGHLIGHT_CHAT_IDS`
 receives. Presenting the admin key shows the full one:
 
 ```bash
