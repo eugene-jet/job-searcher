@@ -78,10 +78,15 @@ jobs:
           # URL above is used instead.
           WORKER_API_KEY: ${{ secrets.WORKER_API_KEY }}
           WORKER_ADMIN_KEY: ${{ secrets.WORKER_ADMIN_KEY }}
-          # Comma-separated chat ids allowed to see the iGaming block. Unset =
-          # everyone sees it (original behaviour); when set, only these ids get
-          # the iGaming block and everyone else gets it folded into Djinni/DOU.
-          IGAMING_CHAT_IDS: ${{ secrets.IGAMING_CHAT_IDS }}
+          # Optional highlight block: vacancies matching HIGHLIGHT_PATTERN (a
+          # case-insensitive regular expression) are pulled into their own block
+          # at the top, headed HIGHLIGHT_LABEL. Unset pattern = no such block.
+          # HIGHLIGHT_CHAT_IDS lists the comma-separated chat ids allowed to see
+          # it; unset = everyone sees it, and when set everyone else gets those
+          # vacancies folded into Djinni/DOU.
+          HIGHLIGHT_PATTERN: ${{ secrets.HIGHLIGHT_PATTERN }}
+          HIGHLIGHT_LABEL: ${{ secrets.HIGHLIGHT_LABEL }}
+          HIGHLIGHT_CHAT_IDS: ${{ secrets.HIGHLIGHT_CHAT_IDS }}
           # Set by the /start webhook: send a fresh digest to only this chat.
           ONLY_CHAT_ID: ${{ github.event.inputs.only_chat_id }}
           # Where the rendered digest is stored for the bot to serve on /start

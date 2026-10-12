@@ -32,9 +32,6 @@
 //                       the /stats command answers, and the chat told when
 //                       GitHub refuses a cron dispatch. Kept as a secret rather
 //                       than in the code, because the repository is public.
-//   IGAMING_CHAT_IDS    no longer needed: the report now sends the list with
-//                       the stored digest. Read only as a fallback for a
-//                       digest stored before that, and safe to delete.
 //
 // Bindings (in wrangler.toml):
 //   SUBSCRIBERS         KV namespace holding one `sub:<chat_id>` record each.
@@ -501,12 +498,12 @@ async function storeDigest(request, env) {
     date: payload.date || null,
     sent_at: payload.sent_at || null,
     full: payload.full,
-    // Absent when the iGaming block is unrestricted and everybody gets `full`.
+    // Absent when the highlight block is unrestricted and everybody gets `full`.
     reduced: Array.isArray(payload.reduced) ? payload.reduced : null,
-    // The chats allowed the iGaming block, sent by the report from the same
+    // The chats allowed the highlight block, sent by the report from the same
     // list its scheduled delivery uses. Null when an older report sent none.
-    igaming_chat_ids: Array.isArray(payload.igaming_chat_ids)
-      ? payload.igaming_chat_ids.map(String)
+    highlight_chat_ids: Array.isArray(payload.highlight_chat_ids)
+      ? payload.highlight_chat_ids.map(String)
       : null,
     // Vacancies of the last seven days, for the bot's description. Null when
     // the report could not count them or is too old to send the count.
@@ -517,21 +514,15 @@ async function storeDigest(request, env) {
   return json({ stored: true, messages: record.full.length, date: record.date });
 }
 
-// Whether a chat may see the iGaming block. The list comes with the stored
-// digest, so /start decides exactly as the scheduled delivery did. The Worker
-// once kept its own copy in an IGAMING_CHAT_IDS secret, entered by hand; it
-// drifted from the report's, and /start withheld the block from a chat the
-// scheduled digest showed it to. That secret is now only a fallback for a
-// digest stored by an older report that did not send the list. An empty list
-// means no restriction.
-function igamingAllowed(env, chatId, record) {
-  let ids;
-  if (record && Array.isArray(record.igaming_chat_ids)) {
-    ids = record.igaming_chat_ids;
-  } else {
-    ids = (env.IGAMING_CHAT_IDS || "").split(",");
-  }
-  ids = ids.map((s) => String(s).trim()).filter(Boolean);
+// Whether a chat may see the highlight block. The list comes with the stored
+// digest, so /start decides exactly as the scheduled delivery did; the Worker
+// keeps no copy of its own, because a copy entered by hand once drifted from
+// the report's. An empty list means no restriction. A digest that carries a
+// reduced variant but no list is treated as restricted to nobody, so a record
+// stored by an older report never shows the block to everyone.
+function highlightAllowed(chatId, record) {
+  if (!record || !Array.isArray(record.highlight_chat_ids)) return false;
+  const ids = record.highlight_chat_ids.map((s) => String(s).trim()).filter(Boolean);
   return ids.length === 0 || ids.includes(String(chatId));
 }
 
@@ -541,7 +532,7 @@ async function sendStoredDigest(env, chatId, stored) {
   const record = stored !== undefined ? stored : await env.SUBSCRIBERS.get(DIGEST_KEY, "json");
   if (!record || !Array.isArray(record.full) || record.full.length === 0) return false;
   const messages =
-    record.reduced && !igamingAllowed(env, chatId, record) ? record.reduced : record.full;
+    record.reduced && !highlightAllowed(chatId, record) ? record.reduced : record.full;
   for (const text of messages) {
     // One failing chunk should not strand the ones after it, and a chat that
     // blocked the bot cannot receive the rest either way.
@@ -1195,7 +1186,7 @@ async function handleBroadcast(request, env) {
 // Public page showing the digest the bot would send right now, so the same
 // thing /start delivers can be opened as a link and shared. It renders whatever
 // is in KV, which the report refreshes every half hour, and shows the reduced
-// variant — the one a chat outside IGAMING_CHAT_IDS receives — unless the admin
+// variant — the one a chat outside HIGHLIGHT_CHAT_IDS receives — unless the admin
 // key is presented, since the full variant is restricted for a reason.
 //
 // The stored messages are already Telegram HTML (<b>, <a>, <i>), which browsers

@@ -267,8 +267,9 @@ _DOU_DESC = re.compile(
 def fetch_dou_description(url):
     """Return the plain-text body of a single DOU vacancy page, or "".
 
-    Used to detect keywords (e.g. iGaming) that appear in the description but
-    not in the title. Network or parse failures degrade to an empty string.
+    Used to match the digest's highlight pattern against keywords that appear
+    in the description but not in the title. Network or parse failures degrade
+    to an empty string.
     """
     try:
         opener, _ = _build_opener()

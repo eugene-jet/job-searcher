@@ -43,71 +43,47 @@ def test_fmt_date_passes_through_non_iso():
     assert dr._fmt_date(None) == "—"
 
 
-# --- is_igaming ------------------------------------------------------------
+# --- is_highlight ----------------------------------------------------------
 
-def test_is_igaming_matches_spelling_variants():
-    assert dr.is_igaming(_vac(title="Product Designer (iGaming)"))
-    assert dr.is_igaming(_vac(title="Designer", description="fast-growing i-gaming studio"))
-    assert dr.is_igaming(_vac(title="Designer", company="Big iGaming Co"))
+# A made-up pattern: the real one is deployment configuration, not code.
+_PATTERN = r"\bfintech\b|банк"
 
 
-def test_is_igaming_negative():
-    assert not dr.is_igaming(_vac(title="Product Designer", description="fintech"))
+def test_is_highlight_is_off_without_a_pattern(monkeypatch):
+    monkeypatch.delenv("HIGHLIGHT_PATTERN", raising=False)
+    assert not dr.is_highlight(_vac(title="Fintech Designer"))
 
 
-def test_is_igaming_does_not_match_a_word_ending_in_i():
-    # "gaming" preceded by another word is game development, not iGaming; only a
-    # standalone "i" prefix counts.
-    for text in ("AI Gaming", "Xiaomi Gaming", "Sci-Gaming", "Multi gaming platform"):
-        assert not dr.is_igaming(_vac(title="Product Designer", description=text)), text
+def test_is_highlight_matches_every_field(monkeypatch):
+    monkeypatch.setenv("HIGHLIGHT_PATTERN", _PATTERN)
+    assert dr.is_highlight(_vac(title="Product Designer (Fintech)"))
+    assert dr.is_highlight(_vac(title="Designer", company="Big Fintech Co"))
+    assert dr.is_highlight(_vac(title="Designer", location="fintech hub"))
+    assert dr.is_highlight(_vac(title="Designer", description="Онлайн-банк"))
 
 
-def test_is_igaming_matches_gambling_vocabulary():
-    # Postings that describe gambling work without saying iGaming, including
-    # the two live "Poker Product Designer" vacancies that prompted this.
-    for text in (
-        "Senior Poker Product Designer",
-        "experience with social casino products",
-        "a sports betting platform",
-        "gambling operator",
-        "our sportsbook",
-        "a licensed bookmaker",
-        "sweepstakes games",
-        "national lottery",
-        "онлайн-казино",
-        "букмекерська компанія",
-        "продукти для беттінгу",
-        "досвід у гемблінгу",
-        "опыт в гемблинге",
-    ):
-        assert dr.is_igaming(_vac(title="Product Designer", description=text)), text
+def test_is_highlight_negative(monkeypatch):
+    monkeypatch.setenv("HIGHLIGHT_PATTERN", _PATTERN)
+    assert not dr.is_highlight(_vac(title="Product Designer", description="healthcare"))
 
 
-def test_is_igaming_ignores_the_near_misses():
-    # Each of these looks like gambling vocabulary but is not about gambling.
-    for text in (
-        "we estimate with planning poker",
-        "we're betting on AI-first design",
-        "design the booking flow for time slots",
-        "Зарплата: фіксована ставка — 120.000 грн",
-    ):
-        assert not dr.is_igaming(_vac(title="Product Designer", description=text)), text
-
-
-def test_is_igaming_matches_standalone_prefix_after_punctuation():
-    for text in ("UI Designer — iGaming", "Designer (iGaming)"):
-        assert dr.is_igaming(_vac(title=text)), text
-
-
-def test_is_igaming_handles_none_fields():
-    # Some listings carry location/description/company as None; is_igaming must
-    # not crash on the str.join.
-    assert not dr.is_igaming(
+def test_is_highlight_handles_none_fields(monkeypatch):
+    # Some listings carry location/description/company as None; is_highlight
+    # must not crash on the str.join.
+    monkeypatch.setenv("HIGHLIGHT_PATTERN", _PATTERN)
+    assert not dr.is_highlight(
         _vac(title="Graphic Designer", company=None, location=None, description=None)
     )
-    assert dr.is_igaming(
-        _vac(title="iGaming Designer", company=None, location=None, description=None)
+    assert dr.is_highlight(
+        _vac(title="Fintech Designer", company=None, location=None, description=None)
     )
+
+
+def test_highlight_label_defaults_and_reads_the_environment(monkeypatch):
+    monkeypatch.delenv("HIGHLIGHT_LABEL", raising=False)
+    assert dr.highlight_label() == dr.DEFAULT_HIGHLIGHT_LABEL
+    monkeypatch.setenv("HIGHLIGHT_LABEL", "⭐ Spotlight")
+    assert dr.highlight_label() == "⭐ Spotlight"
 
 
 # --- _prepare --------------------------------------------------------------
@@ -125,14 +101,14 @@ def test_prepare_drops_graphic_design_vacancies():
     }
     # fast=True keeps the helper offline: no Djinni "Оновлено" or DOU
     # description fetches.
-    igaming, djinni, dou, djinni_all, dou_all = dr._prepare(
+    highlight, djinni, dou, djinni_all, dou_all = dr._prepare(
         data, datetime.date(2026, 9, 10), "2026-09-08", fast=True
     )
     assert [v["title"] for v in djinni] == ["Product Designer"]
     assert [v["title"] for v in dou] == ["UX Designer"]
     assert [v["title"] for v in djinni_all] == ["Product Designer"]
     assert [v["title"] for v in dou_all] == ["UX Designer"]
-    assert igaming == []
+    assert highlight == []
 
 
 # --- vac_line --------------------------------------------------------------
@@ -160,11 +136,9 @@ def test_esc_escapes_html_specials_in_order():
 def test_build_report_structure_and_counts():
     djinni = [_vac(title="Product Designer", source="djinni")]
     dou = [_vac(title="UX Designer", source="dou", url="https://x/9")]
-    igaming = [_vac(title="iGaming Designer", source="djinni", url="https://x/ig")]
     report = dr.build_report(
         today="2026-09-14",
         cutoff="2026-09-12",
-        igaming=igaming,
         djinni=djinni,
         dou=dou,
         errors={},
@@ -172,11 +146,10 @@ def test_build_report_structure_and_counts():
         totals={"dou": 226, "djinni": 89},
     )
     assert "# Design вакансії — 14-09-2026" in report
-    assert "## 🟣 iGaming (1)" in report
     # The per-source headings show kept/scanned from totals.
     assert "## 🔵 Вакансії Djinni (1/89)" in report
     assert "## 🟢 Вакансії DOU (1/226)" in report
-    # Each source heading links to the board's full listing; iGaming does not.
+    # Each source heading links to the board's full listing.
     assert (
         "## 🔵 Вакансії Djinni (1/89) · [🗂️ Всі вакансії](%s)"
         % dr.scrapers.DJINNI_URLS[0]
@@ -184,14 +157,12 @@ def test_build_report_structure_and_counts():
     assert (
         "## 🟢 Вакансії DOU (1/226) · [🗂️ Всі вакансії](%s)" % dr.scrapers.DOU_URL
     ) in report
-    assert "## 🟣 iGaming (1)\n" in report
 
 
 def test_build_report_shows_errors_and_empty_sections():
     report = dr.build_report(
         today="2026-09-14",
         cutoff="2026-09-12",
-        igaming=[],
         djinni=[],
         dou=[],
         errors={"dou": "TimeoutError: timed out"},
@@ -209,7 +180,7 @@ def test_telegram_single_message_for_small_input():
     msgs = dr.build_telegram_messages(
         today="2026-09-14",
         cutoff="2026-09-12",
-        igaming=[],
+        highlight=[],
         djinni=[_vac()],
         dou=[],
         sent_at="14-09-2026 21:00",
@@ -223,7 +194,7 @@ def test_telegram_source_heading_links_to_all_vacancies():
     msgs = dr.build_telegram_messages(
         today="2026-09-14",
         cutoff="2026-09-12",
-        igaming=[_vac(title="iGaming Designer", url="https://x/ig")],
+        highlight=[_vac(title="Fintech Designer", url="https://x/hl")],
         djinni=[_vac()],
         dou=[_vac(source="dou", url="https://x/9")],
         sent_at="14-09-2026 21:00",
@@ -239,14 +210,14 @@ def test_telegram_source_heading_links_to_all_vacancies():
         '<b>🟢 DOU (1/218)</b> · <b><a href="%s">🗂️ Всі вакансії</a></b>'
         % dr.scrapers.DOU_URL
     ) in body
-    assert "<b>🟣 iGaming (1)</b>\n" in body
+    assert "<b>%s (1)</b>\n" % dr.DEFAULT_HIGHLIGHT_LABEL in body
 
 
 def test_telegram_hides_empty_source_block_with_its_link():
     msgs = dr.build_telegram_messages(
         today="2026-09-14",
         cutoff="2026-09-12",
-        igaming=[],
+        highlight=[],
         djinni=[_vac()],
         dou=[],
         sent_at="14-09-2026 21:00",
@@ -265,7 +236,7 @@ def test_telegram_splits_and_respects_limit():
     msgs = dr.build_telegram_messages(
         today="2026-09-14",
         cutoff="2026-09-12",
-        igaming=[],
+        highlight=[],
         djinni=many,
         dou=[],
         sent_at="14-09-2026 21:00",
@@ -280,7 +251,7 @@ def test_telegram_escapes_html_in_titles():
     msgs = dr.build_telegram_messages(
         today="2026-09-14",
         cutoff="2026-09-12",
-        igaming=[],
+        highlight=[],
         djinni=[v],
         dou=[],
         sent_at="14-09-2026 21:00",
@@ -604,8 +575,6 @@ def test_deactivate_noop_when_no_ids(monkeypatch):
     assert called == []
 
 
-# --- iGaming visibility per recipient --------------------------------------
-
 # --- _prepare bump lookback ------------------------------------------------
 
 def test_prepare_only_checks_bumps_within_the_lookback(monkeypatch):
@@ -636,6 +605,44 @@ def test_prepare_bump_pulls_an_older_vacancy_into_the_window(monkeypatch):
     _, djinni, _, _, _ = dr._prepare({"djinni": [bumped], "dou": []}, today, "2026-09-20")
     assert [v["title"] for v in djinni] == ["Product Designer"]
     assert djinni[0]["date_posted"] == "2026-09-22"
+
+
+def test_prepare_skips_dou_descriptions_without_a_pattern(monkeypatch):
+    # The description is read only to match the highlight pattern, so with no
+    # pattern there is nothing to fetch it for.
+    monkeypatch.delenv("HIGHLIGHT_PATTERN", raising=False)
+    fetched = []
+    monkeypatch.setattr(dr.scrapers, "fetch_djinni_updated", lambda url, today_d=None: None)
+    monkeypatch.setattr(dr.scrapers, "fetch_dou_description", fetched.append)
+    dou = [_vac(title="UX Designer", source="dou", url="https://x/d", date_posted="2026-09-22")]
+    dr._prepare({"djinni": [], "dou": dou}, datetime.date(2026, 9, 22), "2026-09-20")
+    assert fetched == []
+
+
+def test_prepare_highlights_a_dou_vacancy_by_its_description(monkeypatch):
+    monkeypatch.setenv("HIGHLIGHT_PATTERN", _PATTERN)
+    fetched = []
+
+    def fake_description(url):
+        fetched.append(url)
+        return "we build a fintech app" if url == "https://x/hit" else "healthcare"
+
+    monkeypatch.setattr(dr.scrapers, "fetch_djinni_updated", lambda url, today_d=None: None)
+    monkeypatch.setattr(dr.scrapers, "fetch_dou_description", fake_description)
+    dou = [
+        _vac(title="UX Designer", source="dou", url="https://x/hit", date_posted="2026-09-22"),
+        _vac(title="UI Designer", source="dou", url="https://x/miss", date_posted="2026-09-22"),
+        # Already matched by its company, so its page is not opened.
+        _vac(title="Product Designer", source="dou", company="Fintech Co",
+             url="https://x/company", date_posted="2026-09-22"),
+    ]
+    highlight, _, dou_kept, _, dou_all = dr._prepare(
+        {"djinni": [], "dou": dou}, datetime.date(2026, 9, 22), "2026-09-20"
+    )
+    assert sorted(fetched) == ["https://x/hit", "https://x/miss"]
+    assert sorted(v["url"] for v in highlight) == ["https://x/company", "https://x/hit"]
+    assert [v["url"] for v in dou_kept] == ["https://x/miss"]
+    assert len(dou_all) == 3
 
 
 # --- week_count ------------------------------------------------------------
@@ -675,7 +682,7 @@ def test_week_count_is_none_when_a_board_failed():
 def test_publish_digest_posts_both_variants(monkeypatch):
     monkeypatch.setenv("DIGEST_URL", "https://worker/digest")
     monkeypatch.setenv("WORKER_ADMIN_KEY", "admin")
-    monkeypatch.setenv("IGAMING_CHAT_IDS", " 22, 11 ")
+    monkeypatch.setenv("HIGHLIGHT_CHAT_IDS", " 22, 11 ")
     captured = {}
 
     def fake_urlopen(request, timeout=None):
@@ -696,8 +703,8 @@ def test_publish_digest_posts_both_variants(monkeypatch):
         "full": ["a", "b"],
         "reduced": ["a"],
         # The same list the scheduled delivery uses, so /start cannot drift
-        # from it; normalised the way igaming_recipients reads it.
-        "igaming_chat_ids": ["11", "22"],
+        # from it; normalised the way highlight_recipients reads it.
+        "highlight_chat_ids": ["11", "22"],
         # No count given: the Worker leaves the description's line out.
         "week_count": None,
     }
@@ -717,10 +724,10 @@ def test_publish_digest_carries_the_week_count(monkeypatch):
 
 
 def test_publish_digest_sends_an_empty_list_when_unrestricted(monkeypatch):
-    # No IGAMING_CHAT_IDS means no restriction; an empty list tells the Worker
+    # No HIGHLIGHT_CHAT_IDS means no restriction; an empty list tells the Worker
     # exactly that, rather than leaving it to guess from a missing field.
     monkeypatch.setenv("DIGEST_URL", "https://worker/digest")
-    monkeypatch.delenv("IGAMING_CHAT_IDS", raising=False)
+    monkeypatch.delenv("HIGHLIGHT_CHAT_IDS", raising=False)
     captured = {}
 
     def fake_urlopen(request, timeout=None):
@@ -729,11 +736,11 @@ def test_publish_digest_sends_an_empty_list_when_unrestricted(monkeypatch):
 
     monkeypatch.setattr(dr.urllib.request, "urlopen", fake_urlopen)
     dr.publish_digest("2026-09-22", "21:00", ["a"], None)
-    assert captured["body"]["igaming_chat_ids"] == []
+    assert captured["body"]["highlight_chat_ids"] == []
 
 
 def test_publish_digest_carries_a_null_reduced_variant(monkeypatch):
-    # No IGAMING_CHAT_IDS means everybody gets the full variant and the report
+    # No HIGHLIGHT_CHAT_IDS means everybody gets the full variant and the report
     # never builds a reduced one; the Worker must be told so explicitly.
     monkeypatch.setenv("DIGEST_URL", "https://worker/digest")
     captured = {}
@@ -769,14 +776,14 @@ def test_publish_digest_survives_a_failure(monkeypatch):
     assert dr.publish_digest("2026-09-22", "21:00", ["a"], None) is False
 
 
-def test_igaming_recipients_unset_is_empty(monkeypatch):
-    monkeypatch.delenv("IGAMING_CHAT_IDS", raising=False)
-    assert dr.igaming_recipients() == set()
+def test_highlight_recipients_unset_is_empty(monkeypatch):
+    monkeypatch.delenv("HIGHLIGHT_CHAT_IDS", raising=False)
+    assert dr.highlight_recipients() == set()
 
 
-def test_igaming_recipients_parses_list(monkeypatch):
-    monkeypatch.setenv("IGAMING_CHAT_IDS", " 172575810 , 42 ")
-    assert dr.igaming_recipients() == {"172575810", "42"}
+def test_highlight_recipients_parses_list(monkeypatch):
+    monkeypatch.setenv("HIGHLIGHT_CHAT_IDS", " 11 , 42 ")
+    assert dr.highlight_recipients() == {"11", "42"}
 
 
 def test_select_messages_full_when_no_restriction():
@@ -792,20 +799,22 @@ def test_select_messages_reduced_for_other_chat():
     assert dr.select_messages("99", {"42"}, "FULL", "REDUCED") == "REDUCED"
 
 
-def test_full_report_shows_igaming_block():
-    ig = [_vac(source="djinni", title="Designer", company="iGaming Co")]
+def test_full_report_shows_highlight_block(monkeypatch):
+    monkeypatch.setenv("HIGHLIGHT_LABEL", "⭐ Spotlight")
+    hl = [_vac(source="djinni", title="Designer", company="Fintech Co")]
     dj = [_vac(source="djinni", title="Product Designer")]
     msgs = dr.build_telegram_messages(
-        "2026-09-20", "2026-09-18", ig, dj, [], "20-09-2026 10:00", {}
+        "2026-09-20", "2026-09-18", hl, dj, [], "20-09-2026 10:00", {}
     )
-    assert "🟣 iGaming" in "\n".join(msgs)
+    assert "⭐ Spotlight" in "\n".join(msgs)
 
 
-def test_reduced_report_folds_igaming_into_sources():
-    # The reduced variant is built with an empty iGaming list and the full
+def test_reduced_report_folds_highlight_into_sources(monkeypatch):
+    # The reduced variant is built with an empty highlight list and the full
     # per-source lists, so the block is gone but the vacancy still shows.
+    monkeypatch.setenv("HIGHLIGHT_LABEL", "⭐ Spotlight")
     dj_all = [
-        _vac(source="djinni", title="Slots Designer", company="iGaming Co"),
+        _vac(source="djinni", title="Wallet Designer", company="Fintech Co"),
         _vac(source="djinni", title="Product Designer"),
     ]
     text = "\n".join(
@@ -813,5 +822,5 @@ def test_reduced_report_folds_igaming_into_sources():
             "2026-09-20", "2026-09-18", [], dj_all, [], "20-09-2026 10:00", {}
         )
     )
-    assert "🟣 iGaming" not in text
-    assert "Slots Designer" in text
+    assert "⭐ Spotlight" not in text
+    assert "Wallet Designer" in text

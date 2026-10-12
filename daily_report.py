@@ -70,42 +70,31 @@ ALL_VACANCIES_LABEL = "🗂️ Всі вакансії"
 # User-Agent with a 403, so requests to the Worker send an explicit one.
 WORKER_USER_AGENT = "job-searcher-report"
 
-# Vacancies that mention iGaming, or gambling by another name, get pulled into
-# their own block at the top. Djinni descriptions arrive with the listing; DOU
-# descriptions are fetched per vacancy in main() and stashed under
-# "description" before this runs.
-#
-# The leading word boundary on "igaming" matters: without it the pattern also
-# fires on any word ending in "i" that precedes "gaming", so "AI gaming" — an
-# ordinary way to describe a game-development role — would be filed here.
-#
-# The rest catch postings that describe gambling work without saying iGaming,
-# such as a "Poker Product Designer" asking for social casino experience. Each
-# was checked against the live listings, and three near-misses are kept out on
-# purpose: "planning poker" is a Scrum estimation technique, "betting on" is an
-# English idiom ("we're betting on AI"), and "slots" in a product posting is
-# far more often a booking time slot than a slot machine. The Ukrainian "ставка"
-# is left out too — in a job ad it is almost always the salary rate. Ukrainian
-# forms accept the Russian spelling as well, which some postings use.
-_IGAMING = re.compile(
-    r"\bi[\s-]?gaming"
-    r"|\bgambling\b"
-    r"|\bcasinos?\b"
-    r"|\bbetting\b(?!\s+on\b)"
-    r"|\bsportsbooks?\b"
-    r"|\bbookmakers?\b"
-    r"|(?<!planning\s)\bpoker\b"
-    r"|\bsweepstakes?\b"
-    r"|\blotter(?:y|ies)\b"
-    r"|казино"
-    r"|букмекер"
-    r"|бет{1,2}[іи]нг"
-    r"|г[еэ]мбл[іи]нг",
-    re.IGNORECASE,
-)
+# Vacancies matching a keyword pattern can be pulled out of their source
+# sections into a block of their own at the top of the digest. The pattern
+# (HIGHLIGHT_PATTERN, a regular expression matched case-insensitively) and the
+# block's heading (HIGHLIGHT_LABEL) are configuration read from the
+# environment, so each deployment sets its own; with no pattern there is no
+# such block and every vacancy stays under its source. The pattern is matched
+# across title, company, location and description. Djinni descriptions arrive
+# with the listing; DOU descriptions are fetched per vacancy in _prepare and
+# stashed under "description" before this runs.
+DEFAULT_HIGHLIGHT_LABEL = "⭐ Вибране"
 
 
-def is_igaming(vac):
+def _highlight_pattern():
+    raw = os.environ.get("HIGHLIGHT_PATTERN", "").strip()
+    return re.compile(raw, re.IGNORECASE) if raw else None
+
+
+def highlight_label():
+    return os.environ.get("HIGHLIGHT_LABEL", "").strip() or DEFAULT_HIGHLIGHT_LABEL
+
+
+def is_highlight(vac):
+    pattern = _highlight_pattern()
+    if pattern is None:
+        return False
     # Coerce each field with `or ""`: a present-but-None value (some listings
     # carry location/description as None) would break str.join otherwise.
     text = " ".join(
@@ -116,7 +105,7 @@ def is_igaming(vac):
             vac.get("description") or "",
         )
     )
-    return bool(_IGAMING.search(text))
+    return bool(pattern.search(text))
 
 
 def _fmt_date(iso):
@@ -168,7 +157,10 @@ def _section(out, heading, items, with_source, total=None, all_url=None):
     out.append("")
 
 
-def build_report(today, cutoff, igaming, djinni, dou, errors, sent_at, totals):
+def build_report(today, cutoff, djinni, dou, errors, sent_at, totals):
+    # The report is committed to the public archive, so it never carries the
+    # highlight block: main() passes the per-source lists with highlighted
+    # vacancies folded back in, as the reduced Telegram variant has them.
     out = []
     out.append("# Design вакансії — %s" % _fmt_date(today))
     out.append("")
@@ -186,9 +178,6 @@ def build_report(today, cutoff, igaming, djinni, dou, errors, sent_at, totals):
         out.append("> ⚠️ Помилки скрапінгу: %s" % json.dumps(errors, ensure_ascii=False))
         out.append("")
 
-    # iGaming matches are pulled out of the per-source blocks and shown first.
-    if igaming:
-        _section(out, "🟣 iGaming", igaming, with_source=True)
     _section(
         out, "🔵 Вакансії Djinni", djinni, with_source=False,
         total=totals.get("djinni"), all_url=SOURCE_ALL_URL["djinni"],
@@ -242,7 +231,7 @@ def _tg_vac_line(vac, with_source):
     return line
 
 
-def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals):
+def build_telegram_messages(today, cutoff, highlight, djinni, dou, sent_at, totals):
     """Render the report as one or more HTML messages under Telegram's limit."""
     lines = [
         "<b>Design вакансії 🧑‍💻✨</b>",
@@ -276,11 +265,11 @@ def build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals
                 last = date
             lines.append(_tg_vac_line(v, with_source))
 
-    add_block("🟣 iGaming", igaming, True)
+    add_block(highlight_label(), highlight, True)
     add_block("🔵 Djinni", djinni, False, totals.get("djinni"), SOURCE_ALL_URL["djinni"])
     add_block("🟢 DOU", dou, False, totals.get("dou"), SOURCE_ALL_URL["dou"])
 
-    if not igaming and not djinni and not dou:
+    if not highlight and not djinni and not dou:
         lines.append("")
         lines.append("Немає вакансій за період.")
 
@@ -474,15 +463,15 @@ def mask_chat_ids(chat_ids):
     sys.stdout.flush()
 
 
-def igaming_recipients():
-    """Chat ids allowed to see the iGaming block, from ``IGAMING_CHAT_IDS``.
+def highlight_recipients():
+    """Chat ids allowed to see the highlight block, from ``HIGHLIGHT_CHAT_IDS``.
 
     Empty (the variable unset) means everyone gets the full report with the
-    iGaming block, i.e. the original behaviour. When it lists ids, only those get
-    the iGaming block; everyone else gets a report where iGaming vacancies are
-    folded back into the Djinni/DOU sections.
+    highlight block. When it lists ids, only those get the block; everyone else
+    gets a report where highlighted vacancies are folded back into the
+    Djinni/DOU sections.
     """
-    raw = os.environ.get("IGAMING_CHAT_IDS", "")
+    raw = os.environ.get("HIGHLIGHT_CHAT_IDS", "")
     return {c.strip() for c in raw.split(",") if c.strip()}
 
 
@@ -545,12 +534,12 @@ def publish_digest(today, sent_at, full, reduced, week=None):
     and scraping both boards again, which takes some twenty seconds. Posting the
     finished messages to ``DIGEST_URL`` lets the Worker reply from KV instead.
 
-    ``reduced`` is ``None`` when the iGaming block is unrestricted; the Worker
+    ``reduced`` is ``None`` when the highlight block is unrestricted; the Worker
     then has only the one variant to serve, which matches what everybody gets.
     Best-effort, like the other Worker calls: a failure here leaves the stored
     digest stale but must not disturb the delivery that follows.
 
-    The chats allowed the iGaming block travel with the digest, so ``/start``
+    The chats allowed the highlight block travel with the digest, so ``/start``
     decides with exactly the list the scheduled delivery uses. The Worker used
     to keep a copy of its own, entered separately, and the two drifted: the
     scheduled digest showed the block to a chat that ``/start`` then withheld
@@ -568,7 +557,7 @@ def publish_digest(today, sent_at, full, reduced, week=None):
         "sent_at": sent_at,
         "full": full,
         "reduced": reduced,
-        "igaming_chat_ids": sorted(igaming_recipients()),
+        "highlight_chat_ids": sorted(highlight_recipients()),
         "week_count": week,
     }
     req = urllib.request.Request(
@@ -585,29 +574,31 @@ def publish_digest(today, sent_at, full, reduced, week=None):
     return True
 
 
-def select_messages(chat_id, allow_igaming, full, reduced):
+def select_messages(chat_id, allow_highlight, full, reduced):
     """Pick the report variant for a recipient.
 
-    ``full`` keeps the iGaming block; ``reduced`` folds iGaming vacancies back
-    into Djinni/DOU. When ``allow_igaming`` is empty everyone gets ``full``
-    (original behaviour); otherwise only the listed chat ids do.
+    ``full`` keeps the highlight block; ``reduced`` folds highlighted vacancies
+    back into Djinni/DOU. When ``allow_highlight`` is empty everyone gets
+    ``full``; otherwise only the listed chat ids do.
     """
-    if not allow_igaming or chat_id in allow_igaming:
+    if not allow_highlight or chat_id in allow_highlight:
         return full
     return reduced
 
 
 def _prepare(data, today_d, cutoff, fast=False):
-    """Rank, window, fetch DOU descriptions and split iGaming out of the scraped
-    data. Returns ``(igaming, djinni, dou, djinni_all, dou_all)``, where the
-    ``*_all`` lists keep iGaming vacancies in their source (for the reduced
-    variant) and ``djinni``/``dou`` exclude them (for the full variant).
+    """Rank, window, fetch DOU descriptions and split the highlight block out of
+    the scraped data. Returns ``(highlight, djinni, dou, djinni_all, dou_all)``,
+    where the ``*_all`` lists keep highlighted vacancies in their source (for
+    the reduced variant) and ``djinni``/``dou`` exclude them (for the full
+    variant).
 
     ``fast=True`` (used for a /start welcome digest) skips the per-vacancy HTTP
     requests — the Djinni "Оновлено" re-ranking and the DOU description fetches —
     which are the bulk of the runtime. The welcome digest then windows/sorts by
-    the published date and classifies iGaming from the title/company only; that
-    is fine because a non-privileged recipient gets the reduced variant anyway.
+    the published date and matches the highlight pattern against the
+    title/company only; that is fine because a non-privileged recipient gets
+    the reduced variant anyway.
     """
     # Djinni's list only exposes the published date, but a posting can be bumped
     # afterwards. Rank by the "Оновлено" (updated) date when the vacancy page
@@ -643,26 +634,28 @@ def _prepare(data, today_d, cutoff, fast=False):
 
     # DOU listings carry no description, so open each DOU vacancy in the window
     # and stash its body text — but skip the fetch when the title/company
-    # already flags it as iGaming.
-    if not fast:
+    # already matches the highlight pattern. The description is read only for
+    # that match, so with no pattern configured nothing is fetched.
+    if not fast and _highlight_pattern() is not None:
         for v in dou:
-            if not is_igaming(v):
+            if not is_highlight(v):
                 v["description"] = scrapers.fetch_dou_description(v["url"])
 
-    # Keep the full per-source lists (iGaming included) for the reduced report
-    # variant, which folds iGaming vacancies back into Djinni/DOU with no
+    # Keep the full per-source lists (highlighted vacancies included) for the
+    # reduced report variant, which folds them back into Djinni/DOU with no
     # separate block.
     djinni_all = list(djinni)
     dou_all = list(dou)
 
-    # Pull iGaming vacancies out of both source lists into a top block. They
-    # keep their source label but are not repeated in the per-source blocks.
-    igaming = [v for v in djinni + dou if is_igaming(v)]
-    igaming.sort(key=lambda x: x["title"].lower())
-    igaming.sort(key=lambda x: x["date_posted"], reverse=True)
-    djinni = [v for v in djinni if not is_igaming(v)]
-    dou = [v for v in dou if not is_igaming(v)]
-    return igaming, djinni, dou, djinni_all, dou_all
+    # Pull highlighted vacancies out of both source lists into a top block.
+    # They keep their source label but are not repeated in the per-source
+    # blocks.
+    highlight = [v for v in djinni + dou if is_highlight(v)]
+    highlight.sort(key=lambda x: x["title"].lower())
+    highlight.sort(key=lambda x: x["date_posted"], reverse=True)
+    djinni = [v for v in djinni if not is_highlight(v)]
+    dou = [v for v in dou if not is_highlight(v)]
+    return highlight, djinni, dou, djinni_all, dou_all
 
 
 def main():
@@ -684,21 +677,21 @@ def main():
 
     only_chat = os.environ.get("ONLY_CHAT_ID", "").strip()
     # A welcome run skips the slow per-vacancy fetches for a faster reply.
-    igaming, djinni, dou, djinni_all, dou_all = _prepare(
+    highlight, djinni, dou, djinni_all, dou_all = _prepare(
         data, today_d, cutoff, fast=bool(only_chat)
     )
     # After _prepare, so Djinni bump dates count as they do in the digest.
     week = week_count(data, today_d)
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    allow_igaming = igaming_recipients()
+    allow_highlight = highlight_recipients()
 
     def variants():
         """Build the full report messages, and the reduced ones only when the
-        iGaming block is restricted to specific chats."""
-        full = build_telegram_messages(today, cutoff, igaming, djinni, dou, sent_at, totals)
+        highlight block is restricted to specific chats."""
+        full = build_telegram_messages(today, cutoff, highlight, djinni, dou, sent_at, totals)
         reduced = (
             build_telegram_messages(today, cutoff, [], djinni_all, dou_all, sent_at, totals)
-            if allow_igaming
+            if allow_highlight
             else None
         )
         return full, reduced
@@ -713,10 +706,10 @@ def main():
         full, reduced = variants()
         published = publish_digest(today, sent_at, full, reduced, week)
         print(
-            "Refresh %s | iGaming %d | Djinni %d | DOU %d | %d message(s)"
+            "Refresh %s | Highlight %d | Djinni %d | DOU %d | %d message(s)"
             % (
                 "published" if published else "NOT published",
-                len(igaming),
+                len(highlight),
                 len(djinni),
                 len(dou),
                 len(full),
@@ -731,12 +724,12 @@ def main():
         mask_chat_ids([only_chat])
         if token:
             full, reduced = variants()
-            messages = select_messages(only_chat, allow_igaming, full, reduced)
+            messages = select_messages(only_chat, allow_highlight, full, reduced)
             status = _deliver(token, only_chat, messages)
             print("Telegram: welcome %s -> %s (%d message(s))" % (status, only_chat, len(messages)))
         print(
-            "Welcome digest %s | iGaming %d | Djinni %d | DOU %d"
-            % (only_chat, len(igaming), len(djinni), len(dou))
+            "Welcome digest %s | Highlight %d | Djinni %d | DOU %d"
+            % (only_chat, len(highlight), len(djinni), len(dou))
         )
         return 0
 
@@ -755,7 +748,7 @@ def main():
     analytics.record_day(counts, today)
     analytics.build_workbook()
 
-    report = build_report(today, cutoff, igaming, djinni, dou, errors, sent_at, totals)
+    report = build_report(today, cutoff, djinni_all, dou_all, errors, sent_at, totals)
     os.makedirs(REPORTS_DIR, exist_ok=True)
     report_path = os.path.join(REPORTS_DIR, "report-%s.md" % today)
     with open(report_path, "w", encoding="utf-8") as fh:
@@ -763,11 +756,11 @@ def main():
 
     print("Report: %s" % report_path)
     print(
-        "Window %s..%s | iGaming %d | Djinni %d/%s | DOU %d/%s | errors: %s"
+        "Window %s..%s | Highlight %d | Djinni %d/%s | DOU %d/%s | errors: %s"
         % (
             cutoff,
             today,
-            len(igaming),
+            len(highlight),
             len(djinni),
             totals.get("djinni", "?"),
             len(dou),
@@ -784,8 +777,8 @@ def main():
         recipients = collect_recipients()
         mask_chat_ids(recipients)
         if recipients:
-            # Full report keeps iGaming as its own top block; the reduced report
-            # folds iGaming vacancies back into Djinni/DOU. IGAMING_CHAT_IDS
+            # Full report keeps the highlight as its own top block; the reduced
+            # report folds those vacancies back into Djinni/DOU. HIGHLIGHT_CHAT_IDS
             # decides who gets which (see select_messages).
             full, reduced = variants()
             # Refresh what /start serves before fanning out: the messages about
@@ -794,7 +787,7 @@ def main():
             sent = 0
             blocked = []
             for chat_id in recipients:
-                messages = select_messages(chat_id, allow_igaming, full, reduced)
+                messages = select_messages(chat_id, allow_highlight, full, reduced)
                 status = _deliver(token, chat_id, messages)
                 if status == "ok":
                     sent += 1
