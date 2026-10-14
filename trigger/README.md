@@ -572,6 +572,23 @@ tick, so the alert repeats at most once every six hours
 every half hour. Without `OWNER_CHAT_ID` the failure is only logged, where
 `wrangler tail` shows it.
 
+A server error (HTTP 5xx) is different: it is GitHub's own fault, not the
+token's, and it usually passes within seconds. On 14 October 2026 a single
+HTTP 500 cost one refresh and raised a false alarm about `GH_TOKEN`, while the
+next tick dispatched as usual. The tick therefore waits 20 seconds
+(`DISPATCH_RETRY_DELAY_MS`) and tries once more. Before it does, it asks GitHub
+whether a run was created since the tick began, because a 5xx does not prove
+the dispatch was dropped, and a report dispatched twice would reach every
+subscriber twice. If a run is there, the tick counts as done; if GitHub cannot
+be asked, nothing is retried. Only when the retry also fails, or cannot be
+made, does the owner get an alert, and that alert names GitHub as the cause
+instead of pointing at the token. Server-error alerts have their own six-hour
+window, so one of them never silences a token alert that follows it.
+
+The check cannot tell the tick's own run from any other dispatch, such as a
+`/start` welcome that lands in the same 20 seconds. In that rare case the tick
+is taken as done when it was not, and the missed run is not reported.
+
 To fix a token failure, generate a new token (or regenerate the old one) with
 the same permissions and store it:
 
