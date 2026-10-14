@@ -258,23 +258,43 @@ const STATS_COMMAND = { command: "stats", description: "Статистика п�
 // list to every subscriber whose version differs.
 const MENU_VERSION = 2;
 
+const WORKFLOW_API = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}`;
+
+function githubHeaders(env) {
+  return {
+    Authorization: `Bearer ${env.GH_TOKEN}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    // GitHub rejects API requests without a User-Agent.
+    "User-Agent": "job-searcher-cron-trigger",
+  };
+}
+
 async function dispatch(env, inputs) {
   const body = { ref: REF };
   if (inputs) body.inputs = inputs;
-  return fetch(
-    `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.GH_TOKEN}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        // GitHub rejects API requests without a User-Agent.
-        "User-Agent": "job-searcher-cron-trigger",
-      },
-      body: JSON.stringify(body),
-    },
-  );
+  return fetch(`${WORKFLOW_API}/dispatches`, {
+    method: "POST",
+    headers: githubHeaders(env),
+    body: JSON.stringify(body),
+  });
+}
+
+// Whether GitHub holds a workflow_dispatch run of the workflow created at or
+// after `since`: true or false, or null when GitHub could not be asked. Any
+// dispatch counts, including a /start welcome or refresh that happened to land
+// in the same seconds, because a run's inputs are not part of the listing.
+async function dispatchedSince(env, since) {
+  try {
+    const res = await fetch(`${WORKFLOW_API}/runs?event=workflow_dispatch&per_page=5`, {
+      headers: githubHeaders(env),
+    });
+    if (!res.ok) return null;
+    const { workflow_runs: runs } = await res.json();
+    return runs.some((run) => new Date(run.created_at) >= since);
+  } catch {
+    return null;
+  }
 }
 
 // How often a failed cron dispatch is reported to the owner. GitHub refuses the
@@ -285,22 +305,45 @@ async function dispatch(env, inputs) {
 // long as the failure lasts.
 const DISPATCH_ALERT_WINDOW_SEC = 6 * 3600;
 
+// How long a cron tick waits before it dispatches again after GitHub answers
+// with a server error (HTTP 5xx). Such an error is GitHub's own and usually
+// passes within seconds: on 14 October 2026 a single HTTP 500 cost the 18:00
+// refresh, and the 18:30 tick dispatched as usual.
+const DISPATCH_RETRY_DELAY_MS = 20 * 1000;
+
 // Dispatch from the cron tick and tell the owner when it fails. The alert goes
 // to OWNER_CHAT_ID as plain text; without that secret the failure is only
 // logged, where `wrangler tail` shows it.
-async function dispatchFromCron(env, inputs, isReport) {
+//
+// A server error is retried once, but only after GitHub confirms that no run
+// was created since the tick began (`since`). A 5xx does not prove the dispatch
+// was dropped, and a report dispatched twice sends every subscriber the digest
+// twice; when GitHub cannot be asked, the tick is given up and reported instead.
+//
+// Server errors keep their own alert window, so that an alert about one does
+// not silence an alert about a broken token for the next six hours.
+async function dispatchFromCron(env, inputs, isReport, since) {
   let detail;
+  let serverError = false;
   try {
-    const res = await dispatch(env, inputs);
+    let res = await dispatch(env, inputs);
+    if (res.status >= 500) {
+      await new Promise((resolve) => setTimeout(resolve, DISPATCH_RETRY_DELAY_MS));
+      const ran = await dispatchedSince(env, since);
+      if (ran) return;
+      if (ran === false) res = await dispatch(env, inputs);
+    }
     if (res.ok) return;
+    serverError = res.status >= 500;
     detail = `HTTP ${res.status}${await githubReason(res)}`;
   } catch (err) {
     detail = String(err);
   }
   console.error(`dispatch failed: ${detail}`);
   if (!env.OWNER_CHAT_ID) return;
-  if (await rateLimited(env, "dispatch_alert", 1, DISPATCH_ALERT_WINDOW_SEC)) return;
-  await reply(env, String(env.OWNER_CHAT_ID).trim(), dispatchAlert(isReport, detail));
+  const bucket = serverError ? "dispatch_alert_5xx" : "dispatch_alert";
+  if (await rateLimited(env, bucket, 1, DISPATCH_ALERT_WINDOW_SEC)) return;
+  await reply(env, String(env.OWNER_CHAT_ID).trim(), dispatchAlert(isReport, detail, serverError));
 }
 
 // GitHub's reason for a refusal, such as "Bad credentials", read from the JSON
@@ -315,12 +358,17 @@ async function githubReason(res) {
 }
 
 // "год" rather than the full word, so the count needs no plural form.
-function dispatchAlert(isReport, detail) {
+function dispatchAlert(isReport, detail, serverError) {
   const what = isReport ? "розсилку дайджесту" : "оновлення дайджесту";
+  const cause = serverError
+    ? `Це збій на боці GitHub, а не GH_TOKEN, і за ${DISPATCH_RETRY_DELAY_MS / 1000} с він не минув. ` +
+      "Зазвичай такий збій минає сам, і наступний тік спрацює як завжди. " +
+      (isReport ? "Пропущену розсилку можна надіслати вручну з вкладки Actions. " : "")
+    : "Найчастіше причина в GH_TOKEN: термін дії минув або токен перегенерували на GitHub. " +
+      "Новий токен записують у Worker командою wrangler secret put GH_TOKEN у теці trigger/. ";
   return (
     `⚠️ Не вдалося запустити ${what} (${detail}).\n\n` +
-    "Найчастіше причина в GH_TOKEN: термін дії минув або токен перегенерували на GitHub. " +
-    "Новий токен записують у Worker командою wrangler secret put GH_TOKEN у теці trigger/. " +
+    cause +
     `Поки збій триває, це повідомлення повторюватиметься раз на ${DISPATCH_ALERT_WINDOW_SEC / 3600} год.`
   );
 }
@@ -1425,7 +1473,7 @@ export default {
     const at = new Date(event.scheduledTime);
     const isReport = at.getUTCMinutes() === 0 && REPORT_HOURS_KYIV.includes(kyivHour(at));
     const inputs = isReport ? undefined : { refresh_only: "true" };
-    ctx.waitUntil(dispatchFromCron(env, inputs, isReport));
+    ctx.waitUntil(dispatchFromCron(env, inputs, isReport, at));
     const stale = [];
     const collect = (record) => {
       if (menuOutOfDate(record)) stale.push(record);
