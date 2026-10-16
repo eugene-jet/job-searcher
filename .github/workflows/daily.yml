@@ -25,6 +25,13 @@ on:
         description: "Only refresh the stored digest, send nothing"
         required: false
         default: ""
+      # Optional one-off line shown above the digest's heading on a full run,
+      # for example to explain why a digest is being sent again. Welcome and
+      # refresh runs ignore it, and the digest stored for /start leaves it out.
+      notice:
+        description: "One-off note shown as the first line of the digest"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -94,6 +101,9 @@ jobs:
           # only that. Authorised with WORKER_ADMIN_KEY, as /deactivate is.
           DIGEST_URL: ${{ secrets.DIGEST_URL }}
           REFRESH_ONLY: ${{ github.event.inputs.refresh_only }}
+          # Passed through the environment rather than spliced into the script,
+          # so the text cannot run as shell code.
+          NOTICE: ${{ github.event.inputs.notice }}
         run: python3 daily_report.py
 
       - name: Open and merge report PR
