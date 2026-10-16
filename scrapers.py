@@ -12,6 +12,7 @@ import http.cookiejar
 import json
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -52,6 +53,28 @@ REQUEST_PAUSE_SEC = 0.25
 
 def _pause():
     time.sleep(REQUEST_PAUSE_SEC)
+
+
+# A listing page that fails takes its whole board out of the digest, so a
+# server error there is worth waiting out. On 16 October 2026 a single HTTP 502
+# from Djinni left the 11:00 digest without any Djinni vacancies, while the
+# refresh run half an hour earlier had read the same listing fine. A
+# server-side 5xx is retried after a pause; anything else (a 4xx, a timeout, a
+# refused connection) is raised at once, as before.
+LISTING_RETRIES = 2
+LISTING_RETRY_DELAY_SEC = 15
+
+
+def _read_listing(opener, req, timeout=30):
+    """Open a listing page and return its decoded body, retrying a 5xx."""
+    for attempt in range(LISTING_RETRIES + 1):
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                return resp.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500 or attempt == LISTING_RETRIES:
+                raise
+            time.sleep(LISTING_RETRY_DELAY_SEC)
 
 
 # Djinni serves 15 vacancies per results page. Once the real results run out on
@@ -207,8 +230,7 @@ def _parse_dou_html(html, today=None):
 def fetch_dou(max_pages=40):
     opener, jar = _build_opener()
 
-    with opener.open(DOU_URL, timeout=30) as resp:
-        html = resp.read().decode("utf-8", "replace")
+    html = _read_listing(opener, DOU_URL)
     items = _parse_dou_html(html)
 
     csrf = None
@@ -239,8 +261,7 @@ def fetch_dou(max_pages=40):
             },
         )
         _pause()
-        with opener.open(req, timeout=30) as resp:
-            payload = json.loads(resp.read().decode("utf-8", "replace"))
+        payload = json.loads(_read_listing(opener, req))
         batch = _parse_dou_html(payload.get("html", ""))
         items.extend(batch)
         count += len(batch)
@@ -357,8 +378,7 @@ def fetch_djinni(max_pages=20):
         for page in range(1, max_pages + 1):
             url = "%s&page=%d" % (base, page)
             _pause()
-            with opener.open(url, timeout=30) as resp:
-                html = resp.read().decode("utf-8", "replace")
+            html = _read_listing(opener, url)
             page_items = _parse_djinni_ld(html)
             fresh = False
             for it in page_items:

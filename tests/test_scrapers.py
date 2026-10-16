@@ -6,6 +6,9 @@ cannot reach the boards.
 """
 
 import datetime
+import urllib.error
+
+import pytest
 
 import scrapers
 
@@ -218,3 +221,64 @@ def test_parse_djinni_ld_ignores_non_jobposting_and_bad_dates():
     items = scrapers._parse_djinni_ld(_djinni_html(good, other))
     assert len(items) == 1
     assert items[0]["date_posted"] is None
+
+
+# --- listing retry ---------------------------------------------------------
+
+
+class _Body:
+    def __init__(self, text):
+        self._text = text
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self):
+        return self._text.encode("utf-8")
+
+
+class _FlakyOpener:
+    """Fail with the queued HTTP codes in turn, then serve ``body``."""
+
+    def __init__(self, codes, body="ok"):
+        self.codes = list(codes)
+        self.body = body
+        self.calls = 0
+
+    def open(self, req, timeout=None):
+        self.calls += 1
+        if self.codes:
+            code = self.codes.pop(0)
+            raise urllib.error.HTTPError("u", code, "err", {}, None)
+        return _Body(self.body)
+
+
+def test_read_listing_retries_a_server_error(monkeypatch):
+    waits = []
+    monkeypatch.setattr(scrapers.time, "sleep", waits.append)
+    opener = _FlakyOpener([502, 503], body="listing")
+    assert scrapers._read_listing(opener, "u") == "listing"
+    assert opener.calls == 3
+    assert waits == [scrapers.LISTING_RETRY_DELAY_SEC] * 2
+
+
+def test_read_listing_gives_up_after_the_last_retry(monkeypatch):
+    monkeypatch.setattr(scrapers.time, "sleep", lambda s: None)
+    opener = _FlakyOpener([502] * (scrapers.LISTING_RETRIES + 1))
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        scrapers._read_listing(opener, "u")
+    assert exc.value.code == 502
+    assert opener.calls == scrapers.LISTING_RETRIES + 1
+
+
+def test_read_listing_does_not_retry_a_client_error(monkeypatch):
+    waits = []
+    monkeypatch.setattr(scrapers.time, "sleep", waits.append)
+    opener = _FlakyOpener([404])
+    with pytest.raises(urllib.error.HTTPError):
+        scrapers._read_listing(opener, "u")
+    assert opener.calls == 1
+    assert waits == []
