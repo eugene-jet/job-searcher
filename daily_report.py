@@ -231,13 +231,19 @@ def _tg_vac_line(vac, with_source):
     return line
 
 
-def build_telegram_messages(today, cutoff, highlight, djinni, dou, sent_at, totals):
-    """Render the report as one or more HTML messages under Telegram's limit."""
+def build_telegram_messages(today, cutoff, highlight, djinni, dou, sent_at, totals, notice=""):
+    """Render the report as one or more HTML messages under Telegram's limit.
+
+    ``notice`` is an optional one-off line put above the heading, such as why a
+    digest is being sent again. It is plain text and is escaped.
+    """
     lines = [
         "<b>Design вакансії 🧑‍💻✨</b>",
         "🕒 <b>%s</b> (Київ)" % _esc(sent_at),
         "За останні %d дні (%s/%s)" % (WINDOW_DAYS, _fmt_date(cutoff)[:2], _fmt_date(today)),
     ]
+    if notice:
+        lines[:0] = [_esc(notice), ""]
 
     def add_block(heading, items, with_source, total=None, all_url=None):
         if not items:
@@ -685,12 +691,16 @@ def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     allow_highlight = highlight_recipients()
 
-    def variants():
+    def variants(notice=""):
         """Build the full report messages, and the reduced ones only when the
         highlight block is restricted to specific chats."""
-        full = build_telegram_messages(today, cutoff, highlight, djinni, dou, sent_at, totals)
+        full = build_telegram_messages(
+            today, cutoff, highlight, djinni, dou, sent_at, totals, notice
+        )
         reduced = (
-            build_telegram_messages(today, cutoff, [], djinni_all, dou_all, sent_at, totals)
+            build_telegram_messages(
+                today, cutoff, [], djinni_all, dou_all, sent_at, totals, notice
+            )
             if allow_highlight
             else None
         )
@@ -782,8 +792,14 @@ def main():
             # decides who gets which (see select_messages).
             full, reduced = variants()
             # Refresh what /start serves before fanning out: the messages about
-            # to be delivered are exactly the ones a new subscriber should get.
+            # to be delivered are the ones a new subscriber should get, minus
+            # any one-off notice, which speaks only to this delivery.
             publish_digest(today, sent_at, full, reduced, week)
+            # NOTICE comes from the workflow's `notice` input on a manual run,
+            # e.g. to explain why a digest is being sent again.
+            notice = os.environ.get("NOTICE", "").strip()
+            if notice:
+                full, reduced = variants(notice)
             sent = 0
             blocked = []
             for chat_id in recipients:

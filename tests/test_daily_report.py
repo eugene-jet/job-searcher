@@ -824,3 +824,33 @@ def test_reduced_report_folds_highlight_into_sources(monkeypatch):
     )
     assert "⭐ Spotlight" not in text
     assert "Wallet Designer" in text
+
+
+def test_telegram_notice_is_the_first_line_and_escaped():
+    msgs = dr.build_telegram_messages(
+        today="2026-09-14",
+        cutoff="2026-09-12",
+        highlight=[],
+        djinni=[_vac()],
+        dou=[],
+        sent_at="14-09-2026 21:00",
+        totals={"djinni": 1},
+        notice="⚠️ Djinni <was> down & is back",
+    )
+    lines = msgs[0].split("\n")
+    assert lines[0] == "⚠️ Djinni &lt;was&gt; down &amp; is back"
+    assert lines[1] == ""
+    assert lines[2].startswith("<b>Design вакансії")
+
+
+def test_telegram_without_notice_starts_with_the_heading():
+    msgs = dr.build_telegram_messages(
+        today="2026-09-14",
+        cutoff="2026-09-12",
+        highlight=[],
+        djinni=[_vac()],
+        dou=[],
+        sent_at="14-09-2026 21:00",
+        totals={"djinni": 1},
+    )
+    assert msgs[0].startswith("<b>Design вакансії")

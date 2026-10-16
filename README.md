@@ -204,6 +204,14 @@ Trigger a run by hand any time from the Actions tab (**Run workflow**) or with:
 gh workflow run "Daily design vacancy report"
 ```
 
+To put a one-off note above the digest's heading, for example to explain why a
+digest is being sent again, pass the `notice` input. Only that run's recipients
+see it; the digest the bot serves on `/start` leaves it out.
+
+```bash
+gh workflow run "Daily design vacancy report" -f notice="⚠️ Text of the note"
+```
+
 ## Filter
 
 The relevance filter (in `scrapers.py`, `RELEVANT`) matches Product Design,
