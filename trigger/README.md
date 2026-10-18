@@ -376,7 +376,10 @@ that subscribed before the menu existed, or a new `MENU_VERSION`. Raise
 tick rolls the new list out to every subscriber, 20 chats per tick. Blocked chats
 are skipped.
 
-Telegram clients may keep showing the old list until the chat is reopened.
+Telegram clients cache the list and may keep showing the old one for a while.
+Reopening the chat is often enough on a phone, but the desktop app can go on
+without the **Menu** button, even though typing `/` already suggests the new
+commands, until the app is quit and started again.
 
 ### One-time setup
 
