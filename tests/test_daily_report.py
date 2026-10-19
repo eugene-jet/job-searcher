@@ -213,7 +213,7 @@ def test_telegram_source_heading_links_to_all_vacancies():
     assert "<b>%s (1)</b>\n" % dr.DEFAULT_HIGHLIGHT_LABEL in body
 
 
-def test_telegram_hides_empty_source_block_with_its_link():
+def test_telegram_shows_empty_scanned_source_with_nothing_new_line():
     msgs = dr.build_telegram_messages(
         today="2026-09-14",
         cutoff="2026-09-12",
@@ -224,8 +224,72 @@ def test_telegram_hides_empty_source_block_with_its_link():
         totals={"djinni": 59, "dou": 218},
     )
     body = "\n".join(msgs)
+    assert (
+        '<b>🟢 DOU (0/218)</b> · <b><a href="%s">🗂️ Всі вакансії</a></b>\n'
+        "<i>Нових вакансій за %d дні немає</i>"
+        % (dr.scrapers.DOU_URL, dr.WINDOW_DAYS)
+    ) in body
+    assert "Немає вакансій за період." not in body
+
+
+def test_telegram_hides_source_that_was_not_scanned():
+    # A failed fetch leaves the source out of totals; "nothing new" would be a
+    # claim the run cannot make.
+    msgs = dr.build_telegram_messages(
+        today="2026-09-14",
+        cutoff="2026-09-12",
+        highlight=[],
+        djinni=[_vac()],
+        dou=[],
+        sent_at="14-09-2026 21:00",
+        totals={"djinni": 59},
+    )
+    body = "\n".join(msgs)
     assert "DOU" not in body
-    assert dr.scrapers.DOU_URL not in body
+    assert "Нових вакансій за" not in body
+
+
+def test_telegram_hides_source_whose_vacancies_are_all_highlighted():
+    msgs = dr.build_telegram_messages(
+        today="2026-09-14",
+        cutoff="2026-09-12",
+        highlight=[_vac(source="dou", url="https://x/hl")],
+        djinni=[_vac()],
+        dou=[],
+        sent_at="14-09-2026 21:00",
+        totals={"djinni": 59, "dou": 218},
+    )
+    body = "\n".join(msgs)
+    assert "🟢 DOU" not in body
+    assert "Нових вакансій за" not in body
+
+
+def test_telegram_all_sources_empty_shows_each_block_once():
+    msgs = dr.build_telegram_messages(
+        today="2026-09-14",
+        cutoff="2026-09-12",
+        highlight=[],
+        djinni=[],
+        dou=[],
+        sent_at="14-09-2026 21:00",
+        totals={"djinni": 59, "dou": 218},
+    )
+    body = "\n".join(msgs)
+    assert body.count("<i>Нових вакансій за %d дні немає</i>" % dr.WINDOW_DAYS) == 2
+    assert "Немає вакансій за період." not in body
+
+
+def test_telegram_falls_back_when_no_block_is_drawn():
+    msgs = dr.build_telegram_messages(
+        today="2026-09-14",
+        cutoff="2026-09-12",
+        highlight=[],
+        djinni=[],
+        dou=[],
+        sent_at="14-09-2026 21:00",
+        totals={},
+    )
+    assert "Немає вакансій за період." in "\n".join(msgs)
 
 
 def test_telegram_splits_and_respects_limit():

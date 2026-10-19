@@ -245,8 +245,16 @@ def build_telegram_messages(today, cutoff, highlight, djinni, dou, sent_at, tota
     if notice:
         lines[:0] = [_esc(notice), ""]
 
-    def add_block(heading, items, with_source, total=None, all_url=None):
-        if not items:
+    def add_block(heading, items, with_source, total=None, all_url=None, source=None):
+        # A board that was scanned but has nothing in the window still gets its
+        # heading and a "nothing new" line, so the reader can tell it was checked
+        # rather than left out. It stays hidden when it was not scanned (no
+        # total: the fetch failed, or this is the highlight block), and when its
+        # vacancies all moved up into the highlight block, where a "nothing new"
+        # line would contradict the vacancies listed above it.
+        if not items and (
+            total is None or any(v["source"] == source for v in highlight)
+        ):
             return
         lines.append("")
         if total is None:
@@ -263,6 +271,8 @@ def build_telegram_messages(today, cutoff, highlight, djinni, dou, sent_at, tota
                 ALL_VACANCIES_LABEL,
             )
         lines.append(title)
+        if not items:
+            lines.append("<i>Нових вакансій за %d дні немає</i>" % WINDOW_DAYS)
         last = None
         for v in items:
             date = _fmt_date(v.get("date_posted") or "—")
@@ -271,11 +281,17 @@ def build_telegram_messages(today, cutoff, highlight, djinni, dou, sent_at, tota
                 last = date
             lines.append(_tg_vac_line(v, with_source))
 
+    header_len = len(lines)
     add_block(highlight_label(), highlight, True)
-    add_block("🔵 Djinni", djinni, False, totals.get("djinni"), SOURCE_ALL_URL["djinni"])
-    add_block("🟢 DOU", dou, False, totals.get("dou"), SOURCE_ALL_URL["dou"])
+    add_block(
+        "🔵 Djinni", djinni, False, totals.get("djinni"), SOURCE_ALL_URL["djinni"],
+        "djinni",
+    )
+    add_block("🟢 DOU", dou, False, totals.get("dou"), SOURCE_ALL_URL["dou"], "dou")
 
-    if not highlight and not djinni and not dou:
+    # Only when no block was drawn at all; an empty but scanned board already
+    # says so under its own heading.
+    if len(lines) == header_len:
         lines.append("")
         lines.append("Немає вакансій за період.")
 
