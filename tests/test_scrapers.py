@@ -73,6 +73,14 @@ def test_is_product_ui_ux_keeps_mixed_and_ui_ux_titles():
         assert scrapers.is_product_ui_ux(title), title
 
 
+def test_is_product_ui_ux_keeps_head_of_design():
+    for title in ("Head of Design", "Head of Design (Arbitrage)", "head of design"):
+        assert scrapers.is_relevant(title), title
+        assert scrapers.is_product_ui_ux(title), title
+    for title in ("Head of SMM", "Lead Design Engineer"):
+        assert not scrapers.is_product_ui_ux(title), title
+
+
 def test_is_product_ui_ux_handles_none():
     assert scrapers.is_product_ui_ux(None) is False
 

@@ -98,6 +98,9 @@ _PRODUCT_UI_UX = (
     r"|\bui\s*designer\b"
     r"|user\s*experience"
     r"|user\s*interface"
+    # A design-leadership title that often names no specialty at all, e.g.
+    # MacPaw's "Head of Design" on DOU on 21 October 2026.
+    r"|\bhead\s+of\s+design"
     # Ukrainian
     r"|продуктов\w*\s*дизайн"  # продуктовий дизайн(ер)
     r"|продакт[\s-]*дизайн"  # продакт-дизайнер
