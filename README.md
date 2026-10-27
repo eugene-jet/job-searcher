@@ -218,7 +218,8 @@ The relevance filter (in `scrapers.py`, `RELEVANT`) matches Product Design,
 UI/UX and Graphic Design titles in English and Ukrainian: `product design`,
 `ui/ux`, `ux/ui`, `ux designer`, `ui designer`, `user experience`,
 `user interface`, `head of design` (a leadership title that often names no
-specialty), `graphic design` (which also catches `graphic designer`), plus
+specialty), `vibe-code designer` and `vibe designer` (a designer who builds
+with AI coding tools), `graphic design` (which also catches `graphic designer`), plus
 Ukrainian forms such as `графічний дизайнер`, `продуктовий дизайнер`,
 `продакт-дизайнер`, `UX-дизайнер`, `UI-дизайнер` and `дизайнер інтерфейсів`. The
 Ukrainian rules anchor on the specialty word, so a bare `дизайнер` is not
@@ -235,3 +236,11 @@ analytics series. A title naming both families (`Graphic/UX Designer`) counts as
 UI/UX and is sent. Restoring graphic-design roles means putting the
 `Graphic%20Design` tag back in `DJINNI_URLS` and dropping the `PRODUCT_UI_UX`
 filter in `_prepare`.
+
+A vacancy that asks for vibe coding stays where it is but gets a
+*⚡ vibe coding* mark at the end of its line. `daily_report.VIBE_CODING` looks
+for the practice and the tools (Claude Code, Lovable, v0, Bolt, Figma Make,
+Replit, Windsurf) in the title and the description. Djinni descriptions arrive
+with the listing, while DOU needs one page load per vacancy in the window to
+read its description. The welcome digest sent on `/start` skips those page
+loads, so there a DOU vacancy is marked only when its title shows it.

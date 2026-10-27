@@ -108,6 +108,31 @@ def is_highlight(vac):
     return bool(pattern.search(text))
 
 
+# A vacancy that asks for vibe coding — building with AI coding tools rather
+# than handing a mock-up to a developer — keeps its place in the digest and
+# gets a mark at the end of its line. The pattern is matched against the title
+# and the description, and names the practice and the tools. "Cursor" is left
+# out because it is also ordinary interface vocabulary (a custom cursor), and a
+# bare "vibe" would catch "a friendly vibe" in a culture paragraph.
+VIBE_CODING = re.compile(
+    r"\bvibe[\s-]*(?:cod|design)"  # vibe coding, vibe-code designer
+    r"|claude\s*code"
+    r"|\blovable\b(?!\s+product)"  # Lovable, not a "minimum lovable product"
+    r"|\bv0\b(?!\.\d)"  # Vercel's v0, not a version number such as v0.3
+    r"|bolt\.new"
+    r"|figma\s*make\b"
+    r"|replit"
+    r"|windsurf",
+    re.IGNORECASE,
+)
+VIBE_CODING_MARK = "⚡ vibe coding"
+
+
+def is_vibe_coding(vac):
+    text = "%s %s" % (vac.get("title") or "", vac.get("description") or "")
+    return bool(VIBE_CODING.search(text))
+
+
 def _fmt_date(iso):
     """Format an ISO date as dd-mm-yyyy for display; pass through anything else."""
     try:
@@ -123,6 +148,8 @@ def vac_line(vac, with_source):
         line += " · %s" % loc
     if with_source:
         line += " [%s]" % SOURCE_LABEL.get(vac["source"], vac["source"])
+    if is_vibe_coding(vac):
+        line += " · _%s_" % VIBE_CODING_MARK
     return line
 
 
@@ -228,6 +255,8 @@ def _tg_vac_line(vac, with_source):
         line += " · %s" % _esc(loc)
     if with_source:
         line += " [%s]" % SOURCE_LABEL.get(vac["source"], vac["source"])
+    if is_vibe_coding(vac):
+        line += " · <i>%s</i>" % VIBE_CODING_MARK
     return line
 
 
@@ -620,7 +649,8 @@ def _prepare(data, today_d, cutoff, fast=False):
     which are the bulk of the runtime. The welcome digest then windows/sorts by
     the published date and matches the highlight pattern against the
     title/company only; that is fine because a non-privileged recipient gets
-    the reduced variant anyway.
+    the reduced variant anyway. A DOU vacancy there carries the vibe-coding
+    mark only when its title shows it.
     """
     # Djinni's list only exposes the published date, but a posting can be bumped
     # afterwards. Rank by the "Оновлено" (updated) date when the vacancy page
@@ -655,13 +685,13 @@ def _prepare(data, today_d, cutoff, fast=False):
     dou = window_sorted("dou")
 
     # DOU listings carry no description, so open each DOU vacancy in the window
-    # and stash its body text — but skip the fetch when the title/company
-    # already matches the highlight pattern. The description is read only for
-    # that match, so with no pattern configured nothing is fetched.
-    if not fast and _highlight_pattern() is not None:
+    # and stash its body text. Both the highlight pattern and the vibe-coding
+    # mark read it, so every vacancy in the window is opened, including one
+    # whose title already matches the highlight pattern: its line can still
+    # carry the mark.
+    if not fast:
         for v in dou:
-            if not is_highlight(v):
-                v["description"] = scrapers.fetch_dou_description(v["url"])
+            v["description"] = scrapers.fetch_dou_description(v["url"])
 
     # Keep the full per-source lists (highlighted vacancies included) for the
     # reduced report variant, which folds them back into Djinni/DOU with no
