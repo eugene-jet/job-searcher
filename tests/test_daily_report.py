@@ -86,6 +86,34 @@ def test_highlight_label_defaults_and_reads_the_environment(monkeypatch):
     assert dr.highlight_label() == "⭐ Spotlight"
 
 
+# --- is_vibe_coding --------------------------------------------------------
+
+def test_is_vibe_coding_matches_title_and_description():
+    assert dr.is_vibe_coding(_vac(title="Vibe-code designer"))
+    for description in (
+        "You will vibe-code prototypes",
+        "Experience with Claude Code",
+        "Tools: Lovable, v0, Figma Make",
+        "prototypes in Bolt.new or Replit",
+        "Windsurf is a plus",
+    ):
+        assert dr.is_vibe_coding(_vac(description=description)), description
+
+
+def test_is_vibe_coding_ignores_lookalikes():
+    for description in (
+        "a team with a friendly vibe",
+        "ship a minimum lovable product",
+        "migrate the design system from v0.3",
+        "Figma makes handoff easy",
+        "design a custom cursor",
+    ):
+        assert not dr.is_vibe_coding(_vac(description=description)), description
+    # Only the title and the description count, not the company.
+    assert not dr.is_vibe_coding(_vac(company="Vibe Design Studio"))
+    assert not dr.is_vibe_coding(_vac(title=None, description=None))
+
+
 # --- _prepare --------------------------------------------------------------
 
 def test_prepare_drops_graphic_design_vacancies():
@@ -122,6 +150,14 @@ def test_vac_line_markdown_with_and_without_source():
 def test_vac_line_without_location():
     v = _vac(location="")
     assert " · " not in dr.vac_line(v, with_source=False)
+
+
+def test_vac_line_marks_vibe_coding_last():
+    v = _vac(url="https://x/3", source="dou", description="Claude Code")
+    assert dr.vac_line(v, with_source=True) == (
+        "- [Product Designer](https://x/3) — Initech · Remote [DOU] · _⚡ vibe coding_"
+    )
+    assert "vibe coding" not in dr.vac_line(_vac(), with_source=False)
 
 
 # --- _esc ------------------------------------------------------------------
@@ -325,6 +361,27 @@ def test_telegram_escapes_html_in_titles():
     assert "&lt;script&gt;" in body
     assert "Me &amp; You" in body
     assert "<script>" not in body
+
+
+def test_telegram_marks_vibe_coding_lines():
+    msgs = dr.build_telegram_messages(
+        today="2026-09-14",
+        cutoff="2026-09-12",
+        highlight=[],
+        djinni=[
+            _vac(title="Vibe-code Designer", url="https://x/vibe"),
+            _vac(title="UX Designer", url="https://x/plain"),
+        ],
+        dou=[],
+        sent_at="14-09-2026 21:00",
+        totals={"djinni": 2},
+    )
+    lines = "\n".join(msgs).splitlines()
+    assert (
+        '• <a href="https://x/vibe">Vibe-code Designer</a> — Initech · Remote'
+        " · <i>⚡ vibe coding</i>"
+    ) in lines
+    assert '• <a href="https://x/plain">UX Designer</a> — Initech · Remote' in lines
 
 
 # --- send_telegram ---------------------------------------------------------
@@ -671,15 +728,32 @@ def test_prepare_bump_pulls_an_older_vacancy_into_the_window(monkeypatch):
     assert djinni[0]["date_posted"] == "2026-09-22"
 
 
-def test_prepare_skips_dou_descriptions_without_a_pattern(monkeypatch):
-    # The description is read only to match the highlight pattern, so with no
-    # pattern there is nothing to fetch it for.
+def test_prepare_reads_dou_descriptions_without_a_pattern(monkeypatch):
+    # The vibe-coding mark reads the description too, so it is fetched even
+    # with no highlight pattern configured.
     monkeypatch.delenv("HIGHLIGHT_PATTERN", raising=False)
     fetched = []
+
+    def fake_description(url):
+        fetched.append(url)
+        return "Prototype the flows in Claude Code"
+
     monkeypatch.setattr(dr.scrapers, "fetch_djinni_updated", lambda url, today_d=None: None)
+    monkeypatch.setattr(dr.scrapers, "fetch_dou_description", fake_description)
+    dou = [_vac(title="UX Designer", source="dou", url="https://x/d", date_posted="2026-09-22")]
+    _, _, dou_kept, _, _ = dr._prepare(
+        {"djinni": [], "dou": dou}, datetime.date(2026, 9, 22), "2026-09-20"
+    )
+    assert fetched == ["https://x/d"]
+    assert dr.is_vibe_coding(dou_kept[0])
+
+
+def test_prepare_fast_reads_no_dou_descriptions(monkeypatch):
+    monkeypatch.setenv("HIGHLIGHT_PATTERN", _PATTERN)
+    fetched = []
     monkeypatch.setattr(dr.scrapers, "fetch_dou_description", fetched.append)
     dou = [_vac(title="UX Designer", source="dou", url="https://x/d", date_posted="2026-09-22")]
-    dr._prepare({"djinni": [], "dou": dou}, datetime.date(2026, 9, 22), "2026-09-20")
+    dr._prepare({"djinni": [], "dou": dou}, datetime.date(2026, 9, 22), "2026-09-20", fast=True)
     assert fetched == []
 
 
@@ -696,14 +770,15 @@ def test_prepare_highlights_a_dou_vacancy_by_its_description(monkeypatch):
     dou = [
         _vac(title="UX Designer", source="dou", url="https://x/hit", date_posted="2026-09-22"),
         _vac(title="UI Designer", source="dou", url="https://x/miss", date_posted="2026-09-22"),
-        # Already matched by its company, so its page is not opened.
+        # Already matched by its company; its page is still opened, because
+        # the vibe-coding mark reads the description as well.
         _vac(title="Product Designer", source="dou", company="Fintech Co",
              url="https://x/company", date_posted="2026-09-22"),
     ]
     highlight, _, dou_kept, _, dou_all = dr._prepare(
         {"djinni": [], "dou": dou}, datetime.date(2026, 9, 22), "2026-09-20"
     )
-    assert sorted(fetched) == ["https://x/hit", "https://x/miss"]
+    assert sorted(fetched) == ["https://x/company", "https://x/hit", "https://x/miss"]
     assert sorted(v["url"] for v in highlight) == ["https://x/company", "https://x/hit"]
     assert [v["url"] for v in dou_kept] == ["https://x/miss"]
     assert len(dou_all) == 3

@@ -81,6 +81,14 @@ def test_is_product_ui_ux_keeps_head_of_design():
         assert not scrapers.is_product_ui_ux(title), title
 
 
+def test_is_product_ui_ux_keeps_vibe_coding_titles():
+    for title in ("Vibe-code designer", "Web designer / Vibe designer", "Vibe Coding Designer"):
+        assert scrapers.is_relevant(title), title
+        assert scrapers.is_product_ui_ux(title), title
+    for title in ("Motion Designer (good vibes)", "Vibe Manager"):
+        assert not scrapers.is_product_ui_ux(title), title
+
+
 def test_is_product_ui_ux_handles_none():
     assert scrapers.is_product_ui_ux(None) is False
 

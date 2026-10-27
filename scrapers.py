@@ -101,6 +101,11 @@ _PRODUCT_UI_UX = (
     # A design-leadership title that often names no specialty at all, e.g.
     # MacPaw's "Head of Design" on DOU on 21 October 2026.
     r"|\bhead\s+of\s+design"
+    # A designer who builds with AI coding tools, e.g. Onepage's "Vibe-code
+    # designer" on DOU and Djinni on 25 October 2026, or a "Vibe designer". Both
+    # listings are already scoped to design, so a developer's "Vibe Coder"
+    # posting does not reach this filter.
+    r"|\bvibe[\s-]*(?:cod|design)"
     # Ukrainian
     r"|продуктов\w*\s*дизайн"  # продуктовий дизайн(ер)
     r"|продакт[\s-]*дизайн"  # продакт-дизайнер
@@ -291,9 +296,9 @@ _DOU_DESC = re.compile(
 def fetch_dou_description(url):
     """Return the plain-text body of a single DOU vacancy page, or "".
 
-    Used to match the digest's highlight pattern against keywords that appear
-    in the description but not in the title. Network or parse failures degrade
-    to an empty string.
+    Used to match the digest's highlight pattern and its vibe-coding mark
+    against keywords that appear in the description but not in the title.
+    Network or parse failures degrade to an empty string.
     """
     try:
         opener, _ = _build_opener()
