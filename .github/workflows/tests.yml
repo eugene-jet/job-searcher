@@ -18,6 +18,10 @@ on:
       - 'reports/**'
       - 'data/**'
 
+# The tests only read the checkout, so the token gets no write access.
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
