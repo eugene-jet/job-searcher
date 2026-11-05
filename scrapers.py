@@ -95,7 +95,9 @@ _PRODUCT_UI_UX = (
     r"|ui\s*/?\s*ux"
     r"|ux\s*/?\s*ui"
     r"|\bux\s*designer\b"
-    r"|\bui\s*designer\b"
+    # "UI/Visual Designer" also counts, e.g. Ralabs' posting on DOU on
+    # 5 November 2026; "Visual/UI Designer" already ends in "UI Designer".
+    r"|\bui\s*(?:/\s*visual\s*)?designer\b"
     r"|user\s*experience"
     r"|user\s*interface"
     # A design-leadership title that often names no specialty at all, e.g.
