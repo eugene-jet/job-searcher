@@ -81,6 +81,18 @@ def test_is_product_ui_ux_keeps_head_of_design():
         assert not scrapers.is_product_ui_ux(title), title
 
 
+def test_is_product_ui_ux_keeps_ui_visual_designer():
+    for title in (
+        "UI/Visual Designer (Global E-commerce & Gamification)",
+        "UI / Visual Designer",
+        "Visual/UI Designer",
+    ):
+        assert scrapers.is_relevant(title), title
+        assert scrapers.is_product_ui_ux(title), title
+    for title in ("Visual Designer", "Brand / Visual Designer"):
+        assert not scrapers.is_product_ui_ux(title), title
+
+
 def test_is_product_ui_ux_keeps_vibe_coding_titles():
     for title in ("Vibe-code designer", "Web designer / Vibe designer", "Vibe Coding Designer"):
         assert scrapers.is_relevant(title), title

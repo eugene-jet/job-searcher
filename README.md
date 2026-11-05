@@ -216,7 +216,7 @@ gh workflow run "Daily design vacancy report" -f notice="⚠️ Text of the note
 
 The relevance filter (in `scrapers.py`, `RELEVANT`) matches Product Design,
 UI/UX and Graphic Design titles in English and Ukrainian: `product design`,
-`ui/ux`, `ux/ui`, `ux designer`, `ui designer`, `user experience`,
+`ui/ux`, `ux/ui`, `ux designer`, `ui designer`, `ui/visual designer`, `user experience`,
 `user interface`, `head of design` (a leadership title that often names no
 specialty), `vibe-code designer` and `vibe designer` (a designer who builds
 with AI coding tools), `graphic design` (which also catches `graphic designer`), plus
