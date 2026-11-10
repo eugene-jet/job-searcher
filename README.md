@@ -85,8 +85,10 @@ UI/UX tag listing) — and keeps a running time series:
   updated counts.
 - **[Live chart on Google Sheets](https://docs.google.com/spreadsheets/d/1fcVnr2D4TvZEHOT95skfsjcpe_AlilVbNe3SeTN2Cm0/edit)**
   — a hosted view of the same data. A bound Apps Script pulls the CSV above from
-  the repo on a daily trigger and redraws the chart, so the sheet tracks the
-  history without a download.
+  the repo on a daily trigger, so the sheet tracks the history without a
+  download. A **Період** dropdown above the chart narrows it to the last 7, 14 or
+  30 days, or shows the whole history. A copy of the script and its setup steps
+  are in [`sheet/`](sheet/).
 
 Both files are committed by the same auto-merged pull request as the Markdown
 report, so the history builds itself. The workbook's document properties are set
@@ -150,6 +152,9 @@ The same suite runs in CI on every push and pull request
 - **`trigger/`** is a Cloudflare Worker that acts as the clock. Its cron calls
   the workflow's `workflow_dispatch` entry point on time — see
   [`trigger/README.md`](trigger/README.md) for a one-time deploy.
+- **`sheet/`** keeps a copy of the Apps Script bound to the live Google Sheets
+  chart, which pulls the CSV every day and filters the chart by period — see
+  [`sheet/README.md`](sheet/README.md).
 
 ## Automation
 
